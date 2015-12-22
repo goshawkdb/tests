@@ -7,8 +7,8 @@
         "localhost:10003"
     ],
     "F": 1,
-    "MaxRMCount": 20,
-    "AsyncFlush": true,
+    "MaxRMCount": 3,
+    "AsyncFlush": false,
     "Accounts": {
         "matthew": "$2y$10$qBXacjgg5XZkyIB2m.il0.ib32rc0dFw6ZtuMoJy13Dek6krd1gtS",
         "test": "$2y$10$vVQGHzQXa80s59sz8/NYBeDWA62tRHxerKk7cd8HX4MJxiXbLKAla"
