@@ -3,12 +3,12 @@
     "Version": 4,
     "Hosts": [
         "localhost:10001",
-        "127.0.0.1:10002",
+        "localhost:10002",
         "localhost:10003"
     ],
     "F": 1,
     "MaxRMCount": 3,
-    "AsyncFlush": true,
+    "AsyncFlush": false,
     "ClientCertificateFingerprints": [
         "6c5b2b2efc0ef77248af64cda16445fdfe936c9f5484711d77c9d67bba5dfe44"
     ]
