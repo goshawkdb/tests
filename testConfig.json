@@ -3,14 +3,13 @@
     "Version": 4,
     "Hosts": [
         "localhost:10001",
-        "localhost:10002",
+        "127.0.0.1:10002",
         "localhost:10003"
     ],
     "F": 1,
     "MaxRMCount": 3,
-    "AsyncFlush": false,
-    "Accounts": {
-        "matthew": "$2y$10$qBXacjgg5XZkyIB2m.il0.ib32rc0dFw6ZtuMoJy13Dek6krd1gtS",
-        "test": "$2y$10$vVQGHzQXa80s59sz8/NYBeDWA62tRHxerKk7cd8HX4MJxiXbLKAla"
-    }
+    "AsyncFlush": true,
+    "ClientCertificateFingerprints": [
+        "6c5b2b2efc0ef77248af64cda16445fdfe936c9f5484711d77c9d67bba5dfe44"
+    ]
 }
