@@ -3,6 +3,7 @@ package retry
 import (
 	"encoding/binary"
 	"goshawkdb.io/client"
+	"goshawkdb.io/common"
 	"goshawkdb.io/tests"
 	"sync"
 )
@@ -34,7 +35,7 @@ func SimpleRetry(th *tests.TestHelper) {
 				if err != nil {
 					return nil, err
 				}
-				if !triggered && rootVsn.Equal(vsn) {
+				if !triggered && rootVsn.Compare(vsn) == common.EQ {
 					return client.Retry, nil
 				}
 				val, err := rootObj.Value()
@@ -104,7 +105,7 @@ func DisjointRetry(th *tests.TestHelper) {
 			if err != nil {
 				return nil, err
 			}
-			if !triggered && rootVsn.Equal(vsn) {
+			if !triggered && rootVsn.Compare(vsn) == common.EQ {
 				return client.Retry, nil
 			}
 			objs, err := rootObj.References()
