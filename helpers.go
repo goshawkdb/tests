@@ -151,7 +151,7 @@ func (th *TestHelper) AwaitRootVersionChange(connNum int, vsn *common.TxnId) {
 		}
 		if rootVsn, err := rootObj.Version(); err != nil {
 			return nil, err
-		} else if vsn.Equal(rootVsn) {
+		} else if vsn.Compare(rootVsn) == common.EQ {
 			return client.Retry, nil
 		}
 		return nil, nil

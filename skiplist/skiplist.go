@@ -152,7 +152,7 @@ func InsertAndGetManyPar(th *tests.TestHelper) {
 					return nil, err
 				}
 				slRootObjId := rootRefs[0].Id
-				if slRootObjId.Equal(sl.ObjId) {
+				if slRootObjId.Compare(sl.ObjId) == common.EQ {
 					return slRootObjId, nil
 				} else {
 					th.Log("retrying", sl.ObjId, "!=", slRootObjId)
@@ -208,7 +208,7 @@ func InsertAndGetManyParPermutation(th *tests.TestHelper) {
 					return nil, err
 				}
 				slRootObjId := rootRefs[0].Id
-				if slRootObjId.Equal(sl.ObjId) {
+				if slRootObjId.Compare(sl.ObjId) == common.EQ {
 					return slRootObjId, nil
 				} else {
 					th.Log("retrying", sl.ObjId, "!=", slRootObjId)
