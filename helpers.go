@@ -83,6 +83,12 @@ func NewTestHelper(t TestInterface, hosts ...string) *TestHelper {
 	}
 }
 
+func (th *TestHelper) MaybeFatal(err error) {
+	if err != nil {
+		th.Fatal(err)
+	}
+}
+
 func (th *TestHelper) CreateConnections(num int) []*Connection {
 	th.Connections = th.createConnections(num, th.hosts)
 	return th.Connections
@@ -106,9 +112,9 @@ func (th *TestHelper) createConnections(num int, hosts []string) []*Connection {
 	return results
 }
 
-func (th *TestHelper) SetRootToZeroUInt64() *common.TxnId {
+func (th *TestHelper) SetRootToZeroUInt64() (*common.TxnId, error) {
 	buf := make([]byte, 8)
-	txnId, _ := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	txnId, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -117,11 +123,14 @@ func (th *TestHelper) SetRootToZeroUInt64() *common.TxnId {
 		rootObj.Set(buf)
 		return rootObj.Version()
 	})
-	return txnId.(*common.TxnId)
+	if err != nil {
+		return nil, err
+	}
+	return txnId.(*common.TxnId), nil
 }
 
-func (th *TestHelper) SetRootToNZeroObjs(n int) *common.TxnId {
-	txnId, _ := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+func (th *TestHelper) SetRootToNZeroObjs(n int) (*common.TxnId, error) {
+	txnId, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -140,11 +149,14 @@ func (th *TestHelper) SetRootToNZeroObjs(n int) *common.TxnId {
 		}
 		return rootObj.Version()
 	})
-	return txnId.(*common.TxnId)
+	if err != nil {
+		return nil, err
+	}
+	return txnId.(*common.TxnId), nil
 }
 
-func (th *TestHelper) AwaitRootVersionChange(connNum int, vsn *common.TxnId) {
-	th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+func (th *TestHelper) AwaitRootVersionChange(connNum int, vsn *common.TxnId) error {
+	_, _, err := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -156,18 +168,18 @@ func (th *TestHelper) AwaitRootVersionChange(connNum int, vsn *common.TxnId) {
 		}
 		return nil, nil
 	})
+	return err
 }
 
-func (th *TestHelper) RunTransaction(connNum int, fun func(*client.Txn) (interface{}, error)) (interface{}, *common.TxnId) {
+func (th *TestHelper) RunTransaction(connNum int, fun func(*client.Txn) (interface{}, error)) (interface{}, *common.TxnId, error) {
 	conn := th.Connections[connNum]
 	result, txnId, err := conn.RunTransaction(fun)
 	if err == Abort || err == client.Restart {
-		return nil, nil
+		return nil, nil, nil
 	} else if err != nil {
-		th.Fatal(err)
-		return nil, txnId
+		return nil, txnId, err
 	}
-	return result, txnId
+	return result, txnId, nil
 }
 
 func (th *TestHelper) Shutdown() {

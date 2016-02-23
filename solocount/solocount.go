@@ -18,7 +18,7 @@ func SoloCount(th *tests.TestHelper) {
 	expected := uint64(0)
 	buf := make([]byte, 8)
 	for {
-		res, _ := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+		res, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
@@ -39,6 +39,7 @@ func SoloCount(th *tests.TestHelper) {
 			}
 			return cur, nil
 		})
+		th.MaybeFatal(err)
 		expected++
 		if res.(uint64) == limit {
 			break

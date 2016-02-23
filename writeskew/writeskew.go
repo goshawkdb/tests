@@ -2,6 +2,7 @@ package writeskew
 
 import (
 	"encoding/binary"
+	"fmt"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
 	"goshawkdb.io/tests"
@@ -17,15 +18,17 @@ func WriteSkew(th *tests.TestHelper) {
 	th.CreateConnections(parIncrs + parReset + 1)
 	defer th.Shutdown()
 
-	rootVsn := th.SetRootToNZeroObjs(2)
+	rootVsn, err := th.SetRootToNZeroObjs(2)
+	th.MaybeFatal(err)
 
 	startBarrier, endBarrierIncrs, endBarrierReset := new(sync.WaitGroup), new(sync.WaitGroup), new(sync.WaitGroup)
 	startBarrier.Add(parIncrs + parReset)
 	endBarrierIncrs.Add(parIncrs)
 	endBarrierReset.Add(parReset)
+	errCh := make(chan error, parIncrs+parReset)
 	for idx := 0; idx < parIncrs; idx++ {
 		connNum := idx + 1
-		go incr(connNum, th, rootVsn, iterations, startBarrier, endBarrierIncrs)
+		go incr(connNum, th, rootVsn, iterations, startBarrier, endBarrierIncrs, errCh)
 	}
 
 	c := make(chan struct{})
@@ -36,22 +39,30 @@ func WriteSkew(th *tests.TestHelper) {
 
 	for idx := 0; idx < parReset; idx++ {
 		connNum := parIncrs + idx + 1
-		go reset(connNum, th, rootVsn, startBarrier, endBarrierReset, c)
+		go reset(connNum, th, rootVsn, startBarrier, endBarrierReset, c, errCh)
 	}
 
-	endBarrierReset.Wait()
+	go func() {
+		endBarrierReset.Wait()
+		close(errCh)
+	}()
+	th.MaybeFatal(<-errCh)
 }
 
-func incr(connNum int, th *tests.TestHelper, rootVsn *common.TxnId, itrs int, startBarrier, endBarrier *sync.WaitGroup) {
+func incr(connNum int, th *tests.TestHelper, rootVsn *common.TxnId, itrs int, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
 	defer endBarrier.Done()
-	th.AwaitRootVersionChange(connNum, rootVsn)
+	err := th.AwaitRootVersionChange(connNum, rootVsn)
 	startBarrier.Done()
+	if err != nil {
+		errCh <- err
+		return
+	}
 	startBarrier.Wait()
 	incrIdx := connNum % 2
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, 1)
 	for ; itrs > 0; itrs-- {
-		res, _ := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		res, _, err := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
@@ -80,21 +91,30 @@ func incr(connNum int, th *tests.TestHelper, rootVsn *common.TxnId, itrs int, st
 				return client.Retry, nil
 			}
 		})
+		if err != nil {
+			errCh <- err
+			return
+		}
 		if res.(bool) {
-			th.Fatal("Discovered both x and y are 1!")
+			errCh <- fmt.Errorf("Discovered both x and y are 1!")
+			return
 		}
 	}
 }
 
-func reset(connNum int, th *tests.TestHelper, rootVsn *common.TxnId, startBarrier, endBarrier *sync.WaitGroup, terminate chan struct{}) {
+func reset(connNum int, th *tests.TestHelper, rootVsn *common.TxnId, startBarrier, endBarrier *sync.WaitGroup, terminate chan struct{}, errCh chan error) {
 	defer endBarrier.Done()
-	th.AwaitRootVersionChange(connNum, rootVsn)
+	err := th.AwaitRootVersionChange(connNum, rootVsn)
 	startBarrier.Done()
+	if err != nil {
+		errCh <- err
+		return
+	}
 	startBarrier.Wait()
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, 0)
 	for {
-		res, _ := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		res, _, err := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
@@ -130,8 +150,13 @@ func reset(connNum int, th *tests.TestHelper, rootVsn *common.TxnId, startBarrie
 				}
 			}
 		})
+		if err != nil {
+			errCh <- err
+			return
+		}
 		if res.(bool) {
-			th.Fatal("Discovered both x and y are 1!")
+			errCh <- fmt.Errorf("Discovered both x and y are 1!")
+			return
 		}
 		select {
 		case <-terminate:

@@ -10,12 +10,12 @@ func NestedRead(th *tests.TestHelper) {
 	defer th.Shutdown()
 
 	// Just read the root var from several nested txns
-	result, _ := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	result, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		rootObj0, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
 		}
-		result, _ := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+		result, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 			rootObj1, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
@@ -23,7 +23,7 @@ func NestedRead(th *tests.TestHelper) {
 			if rootObj0 != rootObj1 {
 				th.Fatal("Should have pointer equality between the same object in nested txns")
 			}
-			result, _ := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+			result, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 				rootObj2, err := txn.GetRootObject()
 				if err != nil {
 					return nil, err
@@ -33,16 +33,19 @@ func NestedRead(th *tests.TestHelper) {
 				}
 				return 42, nil
 			})
+			th.MaybeFatal(err)
 			if result.(int) != 42 {
 				th.Fatal("Expecting to get 42 back from nested txn but got", result)
 			}
 			return 43, nil
 		})
+		th.MaybeFatal(err)
 		if result.(int) != 43 {
 			th.Fatal("Expecting to get 43 back from nested txn but got", result)
 		}
 		return 44, nil
 	})
+	th.MaybeFatal(err)
 	if result.(int) != 44 {
 		th.Fatal("Expecting to get 44 back from outer txn but got", result)
 	}
@@ -53,7 +56,7 @@ func NestedWrite(th *tests.TestHelper) {
 	defer th.Shutdown()
 
 	// A write made in a parent should be visible in the child
-	th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	_, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		rootObj0, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -62,7 +65,7 @@ func NestedWrite(th *tests.TestHelper) {
 		if err != nil {
 			return nil, err
 		}
-		th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+		_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 			rootObj1, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
@@ -78,7 +81,7 @@ func NestedWrite(th *tests.TestHelper) {
 			if err != nil {
 				return nil, err
 			}
-			th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+			_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 				rootObj2, err := txn.GetRootObject()
 				if err != nil {
 					return nil, err
@@ -96,6 +99,7 @@ func NestedWrite(th *tests.TestHelper) {
 				}
 				return nil, nil
 			})
+			th.MaybeFatal(err)
 			val, err = rootObj1.Value()
 			if err != nil {
 				return nil, err
@@ -105,6 +109,7 @@ func NestedWrite(th *tests.TestHelper) {
 			}
 			return nil, nil
 		})
+		th.MaybeFatal(err)
 		val, err := rootObj0.Value()
 		if err != nil {
 			return nil, err
@@ -114,6 +119,7 @@ func NestedWrite(th *tests.TestHelper) {
 		}
 		return nil, nil
 	})
+	th.MaybeFatal(err)
 }
 
 func NestedInnerAbort(th *tests.TestHelper) {
@@ -122,7 +128,7 @@ func NestedInnerAbort(th *tests.TestHelper) {
 
 	// A write made in a child which is aborted should not be seen in
 	// the parent
-	th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	_, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		rootObj0, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -131,7 +137,7 @@ func NestedInnerAbort(th *tests.TestHelper) {
 		if err != nil {
 			return nil, err
 		}
-		th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+		_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 			rootObj1, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
@@ -147,7 +153,7 @@ func NestedInnerAbort(th *tests.TestHelper) {
 			if err != nil {
 				return nil, err
 			}
-			th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+			_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 				rootObj2, err := txn.GetRootObject()
 				if err != nil {
 					return nil, err
@@ -165,6 +171,7 @@ func NestedInnerAbort(th *tests.TestHelper) {
 				}
 				return nil, tests.Abort
 			})
+			th.MaybeFatal(err)
 			val, err = rootObj1.Value()
 			if err != nil {
 				return nil, err
@@ -174,6 +181,7 @@ func NestedInnerAbort(th *tests.TestHelper) {
 			}
 			return nil, nil
 		})
+		th.MaybeFatal(err)
 		val, err := rootObj0.Value()
 		if err != nil {
 			return nil, err
@@ -183,30 +191,41 @@ func NestedInnerAbort(th *tests.TestHelper) {
 		}
 		return nil, nil
 	})
+	th.MaybeFatal(err)
 }
 
 func NestedInnerRetry(th *tests.TestHelper) {
 	th.CreateConnections(2)
 	defer th.Shutdown()
 
-	rootVsn := th.SetRootToZeroUInt64()
+	errCh := make(chan error, 2)
+	rootVsn, err := th.SetRootToZeroUInt64()
+	th.MaybeFatal(err)
 	signal := make(chan struct{})
 
 	go func() {
-		th.AwaitRootVersionChange(1, rootVsn)
+		err := th.AwaitRootVersionChange(1, rootVsn)
 		<-signal
-		th.RunTransaction(1, func(txn *client.Txn) (interface{}, error) {
+		if err != nil {
+			errCh <- err
+			return
+		}
+		_, _, err = th.RunTransaction(1, func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
 			}
 			return nil, rootObj.Set([]byte("Magic"))
 		})
+		if err != nil {
+			errCh <- err
+		}
 	}()
 
 	// If a child txn issues a retry, the parent must restart.
-	th.AwaitRootVersionChange(0, rootVsn)
-	th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	err = th.AwaitRootVersionChange(0, rootVsn)
+	th.MaybeFatal(err)
+	_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		rootObj0, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -218,15 +237,22 @@ func NestedInnerRetry(th *tests.TestHelper) {
 		if str := string(val); str == "Magic" {
 			return nil, nil
 		} else {
-			th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+			_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 				// Even though we've not read root in this inner txn,
 				// retry should still work!
 				close(signal)
 				return client.Retry, nil
 			})
+			th.MaybeFatal(err)
 			return nil, nil
 		}
 	})
+	th.MaybeFatal(err)
+	select {
+	case err = <-errCh:
+		th.Fatal(err)
+	default:
+	}
 }
 
 func NestedInnerCreate(th *tests.TestHelper) {
@@ -235,14 +261,14 @@ func NestedInnerCreate(th *tests.TestHelper) {
 
 	// A create made in a child, returned to the parent should both be
 	// directly usable and writable.
-	th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	_, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		var obj *client.Object
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
 		}
-		th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
-			th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+		_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+			_, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 				obj, err = txn.CreateObject([]byte("Hello"))
 				if err != nil {
 					return nil, err
@@ -265,10 +291,12 @@ func NestedInnerCreate(th *tests.TestHelper) {
 			}
 			return nil, obj.Set([]byte("Goodbye"))
 		})
+		th.MaybeFatal(err)
 		return nil, nil
 	})
+	th.MaybeFatal(err)
 
-	result, _ := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	result, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -284,6 +312,7 @@ func NestedInnerCreate(th *tests.TestHelper) {
 		}
 		return string(val), nil
 	})
+	th.MaybeFatal(err)
 	if str := result.(string); str != "Goodbye" {
 		th.Fatal("Expected to find obj hads value 'Goodbye', but actually has", str)
 	}

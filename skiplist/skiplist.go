@@ -129,20 +129,26 @@ func InsertAndGetManyPar(th *tests.TestHelper) {
 	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
 	startBarrier.Add(par)
 	endBarrier.Add(par)
+	errCh := make(chan error, par)
 
-	vsn := th.SetRootToZeroUInt64()
+	vsn, err := th.SetRootToZeroUInt64()
+	th.MaybeFatal(err)
 	sl := createSkipList(th)
 
 	for c := 0; c < par; c++ {
 		conn := c + 1
 		go func() {
 			defer endBarrier.Done()
-			th.AwaitRootVersionChange(conn, vsn)
+			err := th.AwaitRootVersionChange(conn, vsn)
 			startBarrier.Done()
+			if err != nil {
+				errCh <- err
+				return
+			}
 			startBarrier.Wait()
 
 			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-			objId, _ := th.RunTransaction(conn, func(txn *client.Txn) (interface{}, error) {
+			objId, _, err := th.RunTransaction(conn, func(txn *client.Txn) (interface{}, error) {
 				rootObj, err := txn.GetRootObject()
 				if err != nil {
 					return nil, err
@@ -159,6 +165,10 @@ func InsertAndGetManyPar(th *tests.TestHelper) {
 					return client.Retry, nil
 				}
 			})
+			if err != nil {
+				errCh <- err
+				return
+			}
 			slCopy := sk.SkipListFromObjId(th.Connections[conn].Connection, rng, objId.(*common.VarUUId))
 			for idx := conn; idx < limit; idx = idx + par {
 				log.Println(conn, idx)
@@ -168,12 +178,17 @@ func InsertAndGetManyPar(th *tests.TestHelper) {
 				binary.BigEndian.PutUint64(value, uint64(idx*idx))
 				_, err := slCopy.Insert(key, value)
 				if err != nil {
-					th.Fatal(err)
+					errCh <- err
+					return
 				}
 			}
 		}()
 	}
-	endBarrier.Wait()
+	go func() {
+		endBarrier.Wait()
+		close(errCh)
+	}()
+	th.MaybeFatal(<-errCh)
 }
 
 func InsertAndGetManyParPermutation(th *tests.TestHelper) {
@@ -185,20 +200,26 @@ func InsertAndGetManyParPermutation(th *tests.TestHelper) {
 	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
 	startBarrier.Add(par)
 	endBarrier.Add(par)
+	errCh := make(chan error, par)
 
-	vsn := th.SetRootToZeroUInt64()
+	vsn, err := th.SetRootToZeroUInt64()
+	th.MaybeFatal(err)
 	sl := createSkipList(th)
 
 	for c := 0; c < par; c++ {
 		conn := c + 1
 		go func() {
 			defer endBarrier.Done()
-			th.AwaitRootVersionChange(conn, vsn)
+			err := th.AwaitRootVersionChange(conn, vsn)
 			startBarrier.Done()
+			if err != nil {
+				errCh <- err
+				return
+			}
 			startBarrier.Wait()
 
 			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-			objId, _ := th.RunTransaction(conn, func(txn *client.Txn) (interface{}, error) {
+			objId, _, err := th.RunTransaction(conn, func(txn *client.Txn) (interface{}, error) {
 				rootObj, err := txn.GetRootObject()
 				if err != nil {
 					return nil, err
@@ -215,6 +236,10 @@ func InsertAndGetManyParPermutation(th *tests.TestHelper) {
 					return client.Retry, nil
 				}
 			})
+			if err != nil {
+				errCh <- err
+				return
+			}
 			slCopy := sk.SkipListFromObjId(th.Connections[conn].Connection, rng, objId.(*common.VarUUId))
 			keys := rng.Perm(limit)
 			for idx, base := range keys {
@@ -226,18 +251,23 @@ func InsertAndGetManyParPermutation(th *tests.TestHelper) {
 				binary.BigEndian.PutUint64(value, uint64(num*num))
 				_, err := slCopy.Insert(key, value)
 				if err != nil {
-					th.Fatal(err)
+					errCh <- err
+					return
 				}
 			}
 		}()
 	}
-	endBarrier.Wait()
+	go func() {
+		endBarrier.Wait()
+		close(errCh)
+	}()
+	th.MaybeFatal(<-errCh)
 }
 
 func createSkipList(th *tests.TestHelper) *sk.SkipList {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	conn := th.Connections[0].Connection
-	result, _ := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	result, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		sl, err := sk.NewSkipList(conn, rng)
 		if err != nil {
 			return nil, err
@@ -252,5 +282,6 @@ func createSkipList(th *tests.TestHelper) *sk.SkipList {
 		}
 		return sl, rootObj.Set([]byte{}, slObj)
 	})
+	th.MaybeFatal(err)
 	return result.(*sk.SkipList)
 }

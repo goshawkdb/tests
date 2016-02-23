@@ -2,6 +2,7 @@ package strongserializable
 
 import (
 	"encoding/binary"
+	"fmt"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
 	"goshawkdb.io/tests"
@@ -18,24 +19,34 @@ func StrongSerializable(th *tests.TestHelper) {
 	th.CreateConnections(par)
 	defer th.Shutdown()
 
-	vsn := th.SetRootToNZeroObjs(par + par)
+	vsn, err := th.SetRootToNZeroObjs(par + par)
+	th.MaybeFatal(err)
 	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
 	startBarrier.Add(par)
 	endBarrier.Add(par)
+	errCh := make(chan error, par)
 	for idx := 0; idx < par; idx++ {
 		connNum := idx
-		go runTest(connNum, th, vsn, iterations, startBarrier, endBarrier)
+		go runTest(connNum, th, vsn, iterations, startBarrier, endBarrier, errCh)
 	}
-	endBarrier.Wait()
+	go func() {
+		endBarrier.Wait()
+		close(errCh)
+	}()
+	th.MaybeFatal(<-errCh)
 }
 
-func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations int, startBarrier, endBarrier *sync.WaitGroup) {
+func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations int, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
 	defer endBarrier.Done()
-	th.AwaitRootVersionChange(connNum, vsn)
+	err := th.AwaitRootVersionChange(connNum, vsn)
 	startBarrier.Done()
+	if err != nil {
+		errCh <- err
+		return
+	}
 	startBarrier.Wait()
 	buf := make([]byte, 8)
-	res, _ := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+	res, _, err := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -46,15 +57,20 @@ func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations in
 		}
 		return []*common.VarUUId{objRefs[connNum+connNum].Id, objRefs[connNum+connNum+1].Id}, nil
 	})
+	if err != nil {
+		errCh <- err
+		return
+	}
 	objIds, ok := res.([]*common.VarUUId)
 	if !ok {
-		th.Fatal("Returned result is not a [] var uuid!")
+		errCh <- fmt.Errorf("Returned result is not a [] var uuid!")
+		return
 	}
 	for ; iterations > 0; iterations-- {
 		time.Sleep(11 * time.Millisecond)
 		n := uint64(iterations)
 		binary.BigEndian.PutUint64(buf, n)
-		th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		_, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 			objA, err := txn.GetObject(objIds[0])
 			if err != nil {
 				return nil, err
@@ -71,26 +87,38 @@ func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations in
 			}
 			return nil, nil
 		})
+		if err != nil {
+			errCh <- err
+			return
+		}
 		time.Sleep(7 * time.Millisecond)
 		n++
 		binary.BigEndian.PutUint64(buf, n)
-		th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		_, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 			objA, err := txn.GetObject(objIds[0])
 			if err != nil {
 				return nil, err
 			}
 			return nil, objA.Set(buf)
 		})
+		if err != nil {
+			errCh <- err
+			return
+		}
 		n++
 		binary.BigEndian.PutUint64(buf, n)
-		th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		_, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 			objA, err := txn.GetObject(objIds[0])
 			if err != nil {
 				return nil, err
 			}
 			return nil, objA.Set(buf)
 		})
-		res, _ = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		if err != nil {
+			errCh <- err
+			return
+		}
+		res, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 			objA, err := txn.GetObject(objIds[0])
 			if err != nil {
 				return nil, err
@@ -101,8 +129,13 @@ func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations in
 			}
 			return binary.BigEndian.Uint64(val), nil
 		})
+		if err != nil {
+			errCh <- err
+			return
+		}
 		if m, ok := res.(uint64); !ok || m != n {
-			th.Fatal("Expected", n, "got", m, "(", ok, ")")
+			errCh <- fmt.Errorf("Expected %v got %v (%v)", n, m, ok)
+			return
 		}
 	}
 }
