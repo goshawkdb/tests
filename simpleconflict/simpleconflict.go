@@ -102,6 +102,7 @@ func runConflictCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, 
 		})
 		if err != nil {
 			errCh <- err
+			return
 		}
 		if res.(uint64) == limit {
 			break
