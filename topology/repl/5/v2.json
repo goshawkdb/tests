@@ -1,0 +1,15 @@
+{
+    "ClusterId": "repl5",
+    "Version": 2,
+    "Hosts": [
+        "localhost:10004",
+        "localhost:10005",
+        "localhost:10006"
+    ],
+    "F": 0,
+    "MaxRMCount": 5,
+    "NoSync": true,
+    "ClientCertificateFingerprints": [
+        "6c5b2b2efc0ef77248af64cda16445fdfe936c9f5484711d77c9d67bba5dfe44"
+    ]
+}
