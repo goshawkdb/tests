@@ -1,8 +1,10 @@
 {
-    "ClusterId": "repl1",
+    "ClusterId": "incr11",
     "Version": 1,
     "Hosts": [
-        "localhost:10001"
+        "localhost:10001",
+        "localhost:10002",
+        "localhost:10003"
     ],
     "F": 0,
     "MaxRMCount": 5,
