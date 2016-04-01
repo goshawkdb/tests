@@ -2,7 +2,7 @@
     "ClusterId": "decr2",
     "Version": 2,
     "Hosts": [
-        "localhost:10002"
+        "localhost:10001"
     ],
     "F": 0,
     "MaxRMCount": 5,
