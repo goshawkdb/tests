@@ -1,9 +1,10 @@
 {
-    "ClusterId": "mycluster",
+    "ClusterId": "incr7",
     "Version": 2,
     "Hosts": [
         "localhost:10001",
         "localhost:10002",
+        "localhost:10003",
         "localhost:10004"
     ],
     "F": 1,

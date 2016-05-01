@@ -1,12 +1,14 @@
 {
-    "ClusterId": "mycluster",
+    "ClusterId": "incr11",
     "Version": 2,
     "Hosts": [
         "localhost:10001",
         "localhost:10002",
-        "localhost:10004"
+        "localhost:10003",
+        "localhost:10004",
+        "localhost:10005"
     ],
-    "F": 1,
+    "F": 2,
     "MaxRMCount": 5,
     "NoSync": true,
     "ClientCertificateFingerprints": [
