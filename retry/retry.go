@@ -2,7 +2,9 @@ package retry
 
 import (
 	"encoding/binary"
+	"fmt"
 	"goshawkdb.io/client"
+	"goshawkdb.io/common"
 	"goshawkdb.io/tests"
 	"sync"
 )
@@ -13,19 +15,21 @@ func SimpleRetry(th *tests.TestHelper) {
 	th.CreateConnections(retriers + 1)
 	defer th.Shutdown()
 
-	rootVsn := th.SetRootToZeroUInt64()
+	rootVsn, err := th.SetRootToZeroUInt64()
+	th.MaybeFatal(err)
 	magicNumber := uint64(42)
 
 	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
 	startBarrier.Add(retriers)
 	endBarrier.Add(retriers)
+	errCh := make(chan error, retriers)
 
 	for i := 0; i < retriers; i++ {
 		connIdx := i + 1
 		go func() {
 			defer endBarrier.Done()
 			triggered := false
-			res, _ := th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
+			res, _, err := th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
 				rootObj, err := txn.GetRootObject()
 				if err != nil {
 					return nil, err
@@ -34,7 +38,7 @@ func SimpleRetry(th *tests.TestHelper) {
 				if err != nil {
 					return nil, err
 				}
-				if !triggered && rootVsn.Equal(vsn) {
+				if !triggered && rootVsn.Compare(vsn) == common.EQ {
 					return client.Retry, nil
 				}
 				val, err := rootObj.Value()
@@ -50,6 +54,13 @@ func SimpleRetry(th *tests.TestHelper) {
 					return num, nil
 				}
 			})
+			if err != nil {
+				errCh <- err
+				if !triggered {
+					startBarrier.Done()
+				}
+				return
+			}
 			num := res.(uint64)
 			if num != magicNumber {
 				th.Fatalf("%v Expected %v, got %v", connIdx, magicNumber, num)
@@ -61,7 +72,7 @@ func SimpleRetry(th *tests.TestHelper) {
 	binary.BigEndian.PutUint64(buf, magicNumber)
 	startBarrier.Wait()
 
-	th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -72,8 +83,13 @@ func SimpleRetry(th *tests.TestHelper) {
 		}
 		return nil, nil
 	})
+	th.MaybeFatal(err)
 
-	endBarrier.Wait()
+	go func() {
+		endBarrier.Wait()
+		close(errCh)
+	}()
+	th.MaybeFatal(<-errCh)
 }
 
 // Test that a retry on several objs gets restarted by one write.
@@ -81,12 +97,14 @@ func DisjointRetry(th *tests.TestHelper) {
 	th.CreateConnections(2)
 	defer th.Shutdown()
 
-	rootVsn := th.SetRootToNZeroObjs(3)
+	rootVsn, err := th.SetRootToNZeroObjs(3)
+	th.MaybeFatal(err)
 	magicNumber := uint64(43)
 
 	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
 	startBarrier.Add(1)
 	endBarrier.Add(1)
+	errCh := make(chan error, 2)
 
 	changes := []bool{true, false, true}
 
@@ -94,7 +112,7 @@ func DisjointRetry(th *tests.TestHelper) {
 		defer endBarrier.Done()
 		triggered := false
 		changed := []bool{}
-		th.RunTransaction(1, func(txn *client.Txn) (interface{}, error) {
+		_, _, err := th.RunTransaction(1, func(txn *client.Txn) (interface{}, error) {
 			changed = changed[:0]
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
@@ -104,7 +122,7 @@ func DisjointRetry(th *tests.TestHelper) {
 			if err != nil {
 				return nil, err
 			}
-			if !triggered && rootVsn.Equal(vsn) {
+			if !triggered && rootVsn.Compare(vsn) == common.EQ {
 				return client.Retry, nil
 			}
 			objs, err := rootObj.References()
@@ -133,20 +151,29 @@ func DisjointRetry(th *tests.TestHelper) {
 			}
 			return client.Retry, nil
 		})
+		if err != nil {
+			errCh <- err
+			if !triggered {
+				startBarrier.Done()
+			}
+			return
+		}
 		for idx, c := range changed {
 			if c != changes[idx] {
-				th.Fatalf("Expected to find object %v had changed, but instead %v changed", changes, changed)
+				errCh <- fmt.Errorf("Expected to find object %v had changed, but instead %v changed", changes, changed)
+				return
 			}
 		}
 		if !triggered {
-			th.Fatal("Found magic number in the right place without triggering the writer!")
+			errCh <- fmt.Errorf("Found magic number in the right place without triggering the writer!")
+			return
 		}
 	}()
 
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, magicNumber)
 	startBarrier.Wait()
-	th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -165,6 +192,10 @@ func DisjointRetry(th *tests.TestHelper) {
 		}
 		return nil, nil
 	})
-
-	endBarrier.Wait()
+	th.MaybeFatal(err)
+	go func() {
+		endBarrier.Wait()
+		close(errCh)
+	}()
+	th.MaybeFatal(<-errCh)
 }

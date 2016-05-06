@@ -16,24 +16,34 @@ func SimpleConflict(th *tests.TestHelper) {
 	th.CreateConnections(parCount)
 
 	defer th.Shutdown()
-	vsn := th.SetRootToNZeroObjs(objCount)
+	vsn, err := th.SetRootToNZeroObjs(objCount)
+	th.MaybeFatal(err)
 	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
 	startBarrier.Add(parCount)
 	endBarrier.Add(parCount)
+	errCh := make(chan error, parCount)
 	for idx := 0; idx < parCount; idx++ {
 		idxCopy := idx
-		go runConflictCount(idxCopy, th, vsn, limit, startBarrier, endBarrier)
+		go runConflictCount(idxCopy, th, vsn, limit, startBarrier, endBarrier, errCh)
 	}
-	endBarrier.Wait()
+	go func() {
+		endBarrier.Wait()
+		close(errCh)
+	}()
+	th.MaybeFatal(<-errCh)
 }
 
-func runConflictCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit uint64, startBarrier, endBarrier *sync.WaitGroup) {
+func runConflictCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit uint64, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
 	defer endBarrier.Done()
-	th.AwaitRootVersionChange(connIdx, rootVsn)
+	err := th.AwaitRootVersionChange(connIdx, rootVsn)
 	startBarrier.Done()
+	if err != nil {
+		errCh <- err
+		return
+	}
 	startBarrier.Wait()
 	objsVarUUIds := []*common.VarUUId{}
-	th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
+	_, _, err = th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
 		objsVarUUIds = objsVarUUIds[:0] // must reset the slice whenever we restart this txn
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
@@ -48,9 +58,13 @@ func runConflictCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, 
 		}
 		return nil, nil
 	})
+	if err != nil {
+		errCh <- err
+		return
+	}
 	buf := make([]byte, 8)
 	for {
-		res, _ := th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
+		res, _, err := th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
 			obj, err := txn.GetObject(objsVarUUIds[0])
 			if err != nil {
 				return nil, err
@@ -86,6 +100,10 @@ func runConflictCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, 
 			}
 			return cur, nil
 		})
+		if err != nil {
+			errCh <- err
+			return
+		}
 		if res.(uint64) == limit {
 			break
 		}

@@ -23,38 +23,46 @@ func AtomicRW(th *tests.TestHelper) {
 	th.CreateConnections(1 + conns)
 	defer th.Shutdown()
 
-	vsn := th.SetRootToNZeroObjs(2)
+	vsn, err := th.SetRootToNZeroObjs(2)
+	th.MaybeFatal(err)
 
 	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
 	startBarrier.Add(conns)
 	endBarrier.Add(conns)
+	errCh := make(chan error, conns)
 
 	for idx := 0; idx < conns; idx++ {
 		connNum := idx + 1
-		go runTxn(th, vsn, connNum, attempts, startBarrier, endBarrier)
+		go runTxn(th, vsn, connNum, attempts, startBarrier, endBarrier, errCh)
 	}
 
 	c := make(chan struct{})
 	go func() {
 		endBarrier.Wait()
 		close(c)
+		close(errCh)
 	}()
 
 	startBarrier.Wait()
 	runObserver(th, c)
 	runObserver(th, c)
+	th.MaybeFatal(<-errCh)
 }
 
-func runTxn(th *tests.TestHelper, rootVsn *common.TxnId, connNum int, attempts int, startBarrier, endBarrier *sync.WaitGroup) {
+func runTxn(th *tests.TestHelper, rootVsn *common.TxnId, connNum int, attempts int, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
 	defer endBarrier.Done()
-	th.AwaitRootVersionChange(connNum, rootVsn)
+	err := th.AwaitRootVersionChange(connNum, rootVsn)
 	startBarrier.Done()
+	if err != nil {
+		errCh <- err
+		return
+	}
 	startBarrier.Wait()
 	buf := make([]byte, 8)
 	for ; attempts > 0; attempts-- {
 		time.Sleep(10 * time.Millisecond)
 		if attempts%2 == 0 {
-			th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+			_, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 				rootObj, err := txn.GetRootObject()
 				if err != nil {
 					return nil, err
@@ -86,8 +94,12 @@ func runTxn(th *tests.TestHelper, rootVsn *common.TxnId, connNum int, attempts i
 				}
 				return nil, nil
 			})
+			if err != nil {
+				errCh <- err
+				return
+			}
 		} else {
-			th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+			_, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 				rootObj, err := txn.GetRootObject()
 				if err != nil {
 					return nil, err
@@ -111,6 +123,10 @@ func runTxn(th *tests.TestHelper, rootVsn *common.TxnId, connNum int, attempts i
 					return nil, xObj.Set(buf)
 				}
 			})
+			if err != nil {
+				errCh <- err
+				return
+			}
 		}
 	}
 }
@@ -118,7 +134,7 @@ func runTxn(th *tests.TestHelper, rootVsn *common.TxnId, connNum int, attempts i
 func runObserver(th *tests.TestHelper, terminate chan struct{}) {
 	var x, y uint64
 	for {
-		res, _ := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+		res, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
@@ -146,6 +162,7 @@ func runObserver(th *tests.TestHelper, terminate chan struct{}) {
 				return x == y, nil
 			}
 		})
+		th.MaybeFatal(err)
 		if resBool, ok := res.(bool); ok && !resBool {
 			th.Fatal("Observed x ==", x, "y ==", y)
 		}

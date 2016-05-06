@@ -15,24 +15,34 @@ func ParCount(th *tests.TestHelper) {
 	th.CreateConnections(parCount)
 
 	defer th.Shutdown()
-	vsn := th.SetRootToNZeroObjs(parCount)
+	vsn, err := th.SetRootToNZeroObjs(parCount)
+	th.MaybeFatal(err)
 	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
 	startBarrier.Add(parCount)
 	endBarrier.Add(parCount)
+	errCh := make(chan error, parCount)
 	for idx := 0; idx < parCount; idx++ {
 		idxCopy := idx
-		go runCount(idxCopy, th, vsn, limit, startBarrier, endBarrier)
+		go runCount(idxCopy, th, vsn, limit, startBarrier, endBarrier, errCh)
 	}
-	endBarrier.Wait()
+	go func() {
+		endBarrier.Wait()
+		close(errCh)
+	}()
+	th.MaybeFatal(<-errCh)
 }
 
-func runCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit uint64, startBarrier, endBarrier *sync.WaitGroup) {
+func runCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit uint64, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
 	defer endBarrier.Done()
-	th.AwaitRootVersionChange(connIdx, rootVsn)
+	err := th.AwaitRootVersionChange(connIdx, rootVsn)
 	startBarrier.Done()
+	if err != nil {
+		errCh <- err
+		return
+	}
 	startBarrier.Wait()
 	var myObjVarUUId *common.VarUUId
-	th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
+	_, _, err = th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -45,11 +55,15 @@ func runCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit ui
 		myObjVarUUId = myObj.Id
 		return nil, nil
 	})
+	if err != nil {
+		errCh <- err
+		return
+	}
 	encountered := make(map[uint64]bool)
 	expected := uint64(0)
 	buf := make([]byte, 8)
 	for {
-		res, _ := th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
+		res, _, _ := th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
 			obj, err := txn.GetObject(myObjVarUUId)
 			if err != nil {
 				return nil, err
@@ -70,6 +84,10 @@ func runCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit ui
 			}
 			return cur, nil
 		})
+		if err != nil {
+			errCh <- err
+			return
+		}
 		expected++
 		if res.(uint64) == limit {
 			break
@@ -77,7 +95,8 @@ func runCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit ui
 	}
 	for n := uint64(0); n < limit; n++ {
 		if !encountered[n] {
-			th.Fatal(connIdx, "Failed to encounter", n)
+			errCh <- fmt.Errorf("%v: Failed to encounter %v", connIdx, n)
+			return
 		}
 	}
 }

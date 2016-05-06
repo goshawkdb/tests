@@ -255,7 +255,7 @@ func (s *SkipList) ensureCapacity() error {
 				return nil, err
 			}
 			prev = newPrev.(*client.Object)
-			if next.Id.Equal(tObj.Id) {
+			if next.Id.Compare(tObj.Id) == common.EQ {
 				break
 			} else {
 				cur = next
@@ -294,7 +294,7 @@ func (s *SkipList) getEqOrLessThan(k []byte) (*client.Object, []*client.Object, 
 					return nil, err
 				}
 				next := curRefs[lvl]
-				if next.Id.Equal(tObj.Id) {
+				if next.Id.Compare(tObj.Id) == common.EQ {
 					break
 				}
 				nextKey, _, err := s.withinNode(cur.Id, func(curCap *msgs.SkipListNodeCap, curObj *client.Object, txn *client.Txn) (interface{}, error) {
@@ -350,7 +350,7 @@ func (s *SkipList) Insert(k, v []byte) (*Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !tObj.Id.Equal(curObj.Id) {
+		if tObj.Id.Compare(curObj.Id) != common.EQ {
 			eq, _, err := s.withinNode(curObj.Id, func(nCap *msgs.SkipListNodeCap, nObj *client.Object, txn *client.Txn) (interface{}, error) {
 				// log.Printf("insert inner starting\n")
 				// defer log.Printf("insert inner ended\n")
@@ -538,7 +538,7 @@ func (s *SkipList) refFromTerminus(idx int) (*Node, error) {
 			return nil, err
 		}
 		firstObj := tObjRefs[idx]
-		if firstObj.Id.Equal(tObj.Id) {
+		if firstObj.Id.Compare(tObj.Id) == common.EQ {
 			return nil, nil
 		}
 		return firstObj.Id, nil
@@ -588,7 +588,7 @@ func (s *SkipList) Get(k []byte) (*Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		if obj == nil || obj.Id.Equal(tObj.Id) {
+		if obj == nil || obj.Id.Compare(tObj.Id) == common.EQ {
 			return nil, nil
 		}
 		eq, _, err := s.withinNode(obj.Id, func(curCap *msgs.SkipListNodeCap, curObj *client.Object, txn *client.Txn) (interface{}, error) {
@@ -706,7 +706,7 @@ func (n *Node) refFrom(idx int) (*Node, error) {
 			return nil, err
 		}
 		nObj := cObjRefs[idx]
-		if nObj.Id.Equal(tObj.Id) {
+		if nObj.Id.Compare(tObj.Id) == common.EQ {
 			return nil, nil
 		}
 		return nObj.Id, nil
@@ -732,7 +732,7 @@ func (n *Node) Remove() error {
 		if err != nil {
 			return nil, err
 		}
-		if m.ObjId.Equal(n.ObjId) {
+		if m.ObjId.Compare(n.ObjId) == common.EQ {
 			return nil, n.SkipList.removeNode(n.ObjId)
 		}
 		return nil, nil
@@ -741,5 +741,5 @@ func (n *Node) Remove() error {
 }
 
 func (a *Node) Equal(b *Node) bool {
-	return a.ObjId.Equal(b.ObjId)
+	return a.ObjId.Compare(b.ObjId) == common.EQ
 }

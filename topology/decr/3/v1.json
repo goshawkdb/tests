@@ -1,5 +1,5 @@
 {
-    "ClusterId": "mycluster",
+    "ClusterId": "decr3",
     "Version": 1,
     "Hosts": [
         "localhost:10001",

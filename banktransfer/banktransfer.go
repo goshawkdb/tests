@@ -20,8 +20,9 @@ func BankTransfer(th *tests.TestHelper) {
 	th.CreateConnections(parTransfers + 1)
 	defer th.Shutdown()
 
-	vsn := th.SetRootToNZeroObjs(accounts)
-	th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	vsn, err := th.SetRootToNZeroObjs(accounts)
+	th.MaybeFatal(err)
+	_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -40,32 +41,36 @@ func BankTransfer(th *tests.TestHelper) {
 		}
 		return nil, nil
 	})
+	th.MaybeFatal(err)
 
 	totalWealth := initialWealth * uint64(accounts)
 
 	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
 	startBarrier.Add(parTransfers)
 	endBarrier.Add(parTransfers)
+	errCh := make(chan error, parTransfers)
 	for idx := 0; idx < parTransfers; idx++ {
 		connNum := idx + 1
-		go runTransfers(connNum, accounts, th, vsn, transfers, totalWealth, startBarrier, endBarrier)
+		go runTransfers(connNum, accounts, th, vsn, transfers, totalWealth, startBarrier, endBarrier, errCh)
 	}
 
 	c := make(chan struct{})
 	go func() {
 		endBarrier.Wait()
 		close(c)
+		close(errCh)
 	}()
 
 	startBarrier.Wait()
 	observeTotalWealth(th, totalWealth, c)
 	// ensure we do one final observation right at the end
 	observeTotalWealth(th, totalWealth, c)
+	th.MaybeFatal(<-errCh)
 }
 
 func observeTotalWealth(th *tests.TestHelper, totalWealth uint64, terminate chan struct{}) {
 	for {
-		res, _ := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+		res, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 			sum := uint64(0)
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
@@ -84,6 +89,7 @@ func observeTotalWealth(th *tests.TestHelper, totalWealth uint64, terminate chan
 			}
 			return sum, nil
 		})
+		th.MaybeFatal(err)
 		foundWealth := res.(uint64)
 		if foundWealth != totalWealth {
 			th.Fatal("FoundWealth != TotalWealth:", foundWealth, totalWealth)
@@ -98,10 +104,14 @@ func observeTotalWealth(th *tests.TestHelper, totalWealth uint64, terminate chan
 	}
 }
 
-func runTransfers(connNum, accounts int, th *tests.TestHelper, rootVsn *common.TxnId, transferCount int, totalWealth uint64, startBarrier, endBarrier *sync.WaitGroup) {
+func runTransfers(connNum, accounts int, th *tests.TestHelper, rootVsn *common.TxnId, transferCount int, totalWealth uint64, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
 	defer endBarrier.Done()
-	th.AwaitRootVersionChange(connNum, rootVsn)
+	err := th.AwaitRootVersionChange(connNum, rootVsn)
 	startBarrier.Done()
+	if err != nil {
+		errCh <- err
+		return
+	}
 	startBarrier.Wait()
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	bufFrom := make([]byte, 8)
@@ -113,7 +123,7 @@ func runTransfers(connNum, accounts int, th *tests.TestHelper, rootVsn *common.T
 		if to >= from {
 			to++
 		}
-		th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		_, _, err := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
@@ -147,21 +157,9 @@ func runTransfers(connNum, accounts int, th *tests.TestHelper, rootVsn *common.T
 			}
 			return nil, toAccount.Set(bufTo)
 		})
-		/*
-			res, _ := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
-				sum := uint64(0)
-				rootObj := txn.GetRootObject()
-				for _, account := range rootObj.References() {
-					sum += binary.BigEndian.Uint64(account.Value())
-				}
-				return sum, nil
-			})
-			foundWealth := res.(uint64)
-			if foundWealth != totalWealth {
-				th.Fatal("FoundWealth != TotalWealth:", foundWealth, totalWealth)
-			} else {
-				th.Log(foundWealth)
-			}
-		*/
+		if err != nil {
+			errCh <- err
+			return
+		}
 	}
 }
