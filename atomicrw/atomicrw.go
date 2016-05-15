@@ -134,6 +134,7 @@ func runTxn(th *tests.TestHelper, rootVsn *common.TxnId, connNum int, attempts i
 func runObserver(th *tests.TestHelper, terminate chan struct{}) {
 	var x, y uint64
 	for {
+		time.Sleep(10 * time.Millisecond)
 		res, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
