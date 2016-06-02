@@ -2,17 +2,19 @@ package tests
 
 import (
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
 	"log"
+	"os"
 	"runtime"
+	"strings"
+	"sync"
 	"time"
 )
 
 const (
-	clusterCertPEM = `-----BEGIN CERTIFICATE-----
+	defaultClusterCert = `-----BEGIN CERTIFICATE-----
 MIIBxzCCAW2gAwIBAgIIQqu37k6KPOIwCgYIKoZIzj0EAwIwOjESMBAGA1UEChMJ
 R29zaGF3a0RCMSQwIgYDVQQDExtDbHVzdGVyIENBIFJvb3QgQ2VydGlmaWNhdGUw
 IBcNMTYwMTAzMDkwODE2WhgPMjIxNjAxMDMwOTA4MTZaMDoxEjAQBgNVBAoTCUdv
@@ -24,7 +26,7 @@ wk5csm2ZcfgwGwYDVR0jBBQwEoAQv2zGtyvpBPDCTlyybZlx+DAKBggqhkjOPQQD
 AgNIADBFAiAy9NW3zE1ACYDWcp+qeTjQOfEtED3c/LKIXhrbzg2N/QIhANLb4crz
 9ENxIifhZcJ/S2lqf49xZZS91dLF4x5ApKci
 -----END CERTIFICATE-----`
-	clientCertAndKeyPEM = `-----BEGIN CERTIFICATE-----
+	defaultClientKeyPair = `-----BEGIN CERTIFICATE-----
 MIIBszCCAVmgAwIBAgIIfOmxD9dF8ZMwCgYIKoZIzj0EAwIwOjESMBAGA1UEChMJ
 R29zaGF3a0RCMSQwIgYDVQQDExtDbHVzdGVyIENBIFJvb3QgQ2VydGlmaWNhdGUw
 IBcNMTYwMTAzMDkwODUwWhgPMjIxNjAxMDMwOTA4NTBaMBQxEjAQBgNVBAoTCUdv
@@ -41,6 +43,7 @@ MHcCAQEEIN9Mf6CzDgCs1EbzJqDK3+12wcr7Ua3Huz6qNhyXCrS1oAoGCCqGSM49
 AwEHoUQDQgAEWsA9x2XDkNZCZL2YIVcWUPpHwAFoF/gsDzbXBWY9r22Izqfy9Em9
 uYe5KPLwvAklFGOj0YmrsoPpmawr0/2xeA==
 -----END EC PRIVATE KEY-----`
+	defaultClusterHosts = "localhost"
 )
 
 type TestInterface interface {
@@ -52,8 +55,10 @@ type TestInterface interface {
 
 type TestHelper struct {
 	TestInterface
-	Connections []*Connection
-	hosts       []string
+	connections   []*Connection
+	clusterHosts  []string
+	clusterCert   []byte
+	clientKeyPair []byte
 }
 
 type TestHelperTxnResult uint8
@@ -64,132 +69,91 @@ func (self TestHelperTxnResult) Error() string {
 	return "Abort"
 }
 
-func NewTestHelper(t TestInterface, hosts ...string) *TestHelper {
+func NewTestHelper(t TestInterface) *TestHelper {
 	if t == nil {
 		t = defaultTestInterface
 	}
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
-	if len(hosts) == 0 {
-		flag.Parse()
-		hosts = flag.Args()
+	clusterHostsStr := os.Getenv("GOSHAWKDB_CLUSTER_HOSTS")
+	if len(clusterHostsStr) == 0 {
+		clusterHostsStr = defaultClusterHosts
 	}
-	if len(hosts) == 0 {
-		t.Fatal("No hosts provided")
+	clusterHosts := strings.Split(clusterHostsStr, ",")
+	clusterCert := os.Getenv("GOSHAWKDB_CLUSTER_CERT")
+	if len(clusterCert) == 0 {
+		clusterCert = defaultClusterCert
+	}
+	clientKeyPair := os.Getenv("GOSHAWKDB_CLIENT_KEYPAIR")
+	if len(clientKeyPair) == 0 {
+		clientKeyPair = defaultClientKeyPair
 	}
 	return &TestHelper{
 		TestInterface: t,
-		hosts:         hosts,
+		clusterHosts:  clusterHosts,
+		clusterCert:   []byte(clusterCert),
+		clientKeyPair: []byte(clientKeyPair),
 	}
 }
 
-func (th *TestHelper) MaybeFatal(err error) {
+func (th *TestHelper) MaybeFatal(err error) error {
 	if err != nil {
 		th.Fatal(err)
 	}
+	return err
 }
 
 func (th *TestHelper) CreateConnections(num int) []*Connection {
-	th.Connections = th.createConnections(num, th.hosts)
-	return th.Connections
-}
-
-func (th *TestHelper) createConnections(num int, hosts []string) []*Connection {
 	results := make([]*Connection, num)
 	for i := 0; i < num; i++ {
-		host := hosts[i%len(hosts)]
-		conn, err := client.NewConnection(host, []byte(clientCertAndKeyPEM), []byte(clusterCertPEM))
+		host := th.clusterHosts[i%len(th.clusterHosts)]
+		conn, err := client.NewConnection(host, th.clientKeyPair, th.clusterCert)
 		if err != nil {
 			th.Fatal(err)
 		}
 		results[i] = &Connection{
+			TestHelper:              th,
 			Connection:              conn,
 			connIdx:                 i,
 			submissionCount:         0,
 			totalSubmissionDuration: time.Duration(0),
 		}
 	}
+	if len(th.connections) == 0 {
+		th.connections = results
+	} else {
+		th.connections = append(th.connections, results...)
+	}
 	return results
 }
 
-func (th *TestHelper) SetRootToZeroUInt64() (*common.TxnId, error) {
-	buf := make([]byte, 8)
-	txnId, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
-		if err != nil {
-			return nil, err
-		}
-		binary.BigEndian.PutUint64(buf, 0)
-		rootObj.Set(buf)
-		return rootObj.Version()
-	})
-	if err != nil {
-		return nil, err
-	}
-	return txnId.(*common.TxnId), nil
-}
-
-func (th *TestHelper) SetRootToNZeroObjs(n int) (*common.TxnId, error) {
-	txnId, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
-		if err != nil {
-			return nil, err
-		}
-		objs := make([]*client.Object, n)
-		for idx := range objs {
-			zeroBuf := make([]byte, 8)
-			binary.BigEndian.PutUint64(zeroBuf, 0)
-			objs[idx], err = txn.CreateObject(zeroBuf)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if err := rootObj.Set([]byte{}, objs...); err != nil {
-			return nil, err
-		}
-		return rootObj.Version()
-	})
-	if err != nil {
-		return nil, err
-	}
-	return txnId.(*common.TxnId), nil
-}
-
-func (th *TestHelper) AwaitRootVersionChange(connNum int, vsn *common.TxnId) error {
-	_, _, err := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
-		if err != nil {
-			return nil, err
-		}
-		if rootVsn, err := rootObj.Version(); err != nil {
-			return nil, err
-		} else if vsn.Compare(rootVsn) == common.EQ {
-			return client.Retry, nil
-		}
-		return nil, nil
-	})
-	return err
-}
-
-func (th *TestHelper) RunTransaction(connNum int, fun func(*client.Txn) (interface{}, error)) (interface{}, *common.TxnId, error) {
-	conn := th.Connections[connNum]
-	result, txnId, err := conn.RunTransaction(fun)
-	if err == Abort || err == client.Restart {
-		return nil, nil, nil
-	} else if err != nil {
-		return nil, txnId, err
-	}
-	return result, txnId, nil
-}
-
 func (th *TestHelper) Shutdown() {
-	for _, c := range th.Connections {
+	for _, c := range th.connections {
 		th.Logf("Average submission time: %v (%v submissions)", c.AvgSubmissionTime(), c.submissionCount)
-		c.Shutdown()
+		c.Connection.Shutdown()
 	}
+}
+
+func (th *TestHelper) InParallel(n int, fun func(int, *Connection) error) (*sync.WaitGroup, chan error) {
+	conns := th.CreateConnections(n)
+	endBarrier := new(sync.WaitGroup)
+	endBarrier.Add(n)
+	errCh := make(chan error, n)
+	for idx, conn := range conns {
+		idxCopy, connCopy := idx, conn
+		go func() {
+			defer endBarrier.Done()
+			err := fun(idxCopy, connCopy)
+			if err != nil {
+				errCh <- err
+			}
+		}()
+	}
+	return endBarrier, errCh
 }
 
 type Connection struct {
+	*TestHelper
 	*client.Connection
 	connIdx                 int
 	submissionCount         int
@@ -204,6 +168,59 @@ func (conn *Connection) RunTransaction(fun func(*client.Txn) (interface{}, error
 		conn.totalSubmissionDuration += s
 	}
 	return result, stats.TxnId, err
+}
+
+func (conn *Connection) SetRootToZeroUInt64() (*common.TxnId, error) {
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, 0)
+	txnId, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+		rootObj, err := txn.GetRootObject()
+		if err != nil {
+			return nil, err
+		}
+		rootObj.Set(buf)
+		return rootObj.Version()
+	})
+	return txnId.(*common.TxnId), conn.MaybeFatal(err)
+}
+
+func (conn *Connection) SetRootToNZeroObjs(n int) (*common.TxnId, error) {
+	zeroBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(zeroBuf, 0)
+	txnId, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+		rootObj, err := txn.GetRootObject()
+		if err != nil {
+			return nil, err
+		}
+		objs := make([]*client.Object, n)
+		for idx := range objs {
+			objs[idx], err = txn.CreateObject(zeroBuf)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := rootObj.Set([]byte{}, objs...); err != nil {
+			return nil, err
+		}
+		return rootObj.Version()
+	})
+	return txnId.(*common.TxnId), conn.MaybeFatal(err)
+}
+
+func (conn *Connection) AwaitRootVersionChange(vsn *common.TxnId) error {
+	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+		rootObj, err := txn.GetRootObject()
+		if err != nil {
+			return nil, err
+		}
+		if rootVsn, err := rootObj.Version(); err != nil {
+			return nil, err
+		} else if vsn.Compare(rootVsn) == common.EQ {
+			return client.Retry, nil
+		}
+		return nil, nil
+	})
+	return conn.MaybeFatal(err)
 }
 
 func (conn *Connection) AvgSubmissionTime() time.Duration {

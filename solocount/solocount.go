@@ -9,16 +9,16 @@ import (
 
 // We have one client, and it counts from 0 to 1000
 func SoloCount(th *tests.TestHelper) {
-	th.CreateConnections(1)
+	c := th.CreateConnections(1)[0]
 	limit := uint64(1000)
 
 	defer th.Shutdown()
-	th.SetRootToZeroUInt64()
+	c.SetRootToZeroUInt64()
 	encountered := make(map[uint64]bool)
 	expected := uint64(0)
 	buf := make([]byte, 8)
 	for {
-		res, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+		res, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err

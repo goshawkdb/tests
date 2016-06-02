@@ -16,19 +16,15 @@ func StrongSerializable(th *tests.TestHelper) {
 	par := 3
 	iterations := 1000
 
-	th.CreateConnections(par)
+	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
-	vsn, err := th.SetRootToNZeroObjs(par + par)
-	th.MaybeFatal(err)
-	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
+	vsn, _ := conn.SetRootToNZeroObjs(par + par)
+	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(par)
-	endBarrier.Add(par)
-	errCh := make(chan error, par)
-	for idx := 0; idx < par; idx++ {
-		connNum := idx
-		go runTest(connNum, th, vsn, iterations, startBarrier, endBarrier, errCh)
-	}
+	endBarrier, errCh := th.InParallel(par, func(connIdx int, conn *tests.Connection) error {
+		return runTest(connIdx, conn, vsn, iterations, startBarrier)
+	})
 	go func() {
 		endBarrier.Wait()
 		close(errCh)
@@ -36,17 +32,15 @@ func StrongSerializable(th *tests.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations int, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
-	defer endBarrier.Done()
-	err := th.AwaitRootVersionChange(connNum, vsn)
+func runTest(connNum int, conn *tests.Connection, vsn *common.TxnId, iterations int, startBarrier *sync.WaitGroup) error {
+	err := conn.AwaitRootVersionChange(vsn)
 	startBarrier.Done()
 	if err != nil {
-		errCh <- err
-		return
+		return err
 	}
 	startBarrier.Wait()
 	buf := make([]byte, 8)
-	res, _, err := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+	res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -58,19 +52,17 @@ func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations in
 		return []*common.VarUUId{objRefs[connNum+connNum].Id, objRefs[connNum+connNum+1].Id}, nil
 	})
 	if err != nil {
-		errCh <- err
-		return
+		return err
 	}
 	objIds, ok := res.([]*common.VarUUId)
 	if !ok {
-		errCh <- fmt.Errorf("Returned result is not a [] var uuid!")
-		return
+		return fmt.Errorf("Returned result is not a [] var uuid!")
 	}
 	for ; iterations > 0; iterations-- {
 		time.Sleep(11 * time.Millisecond)
 		n := uint64(iterations)
 		binary.BigEndian.PutUint64(buf, n)
-		_, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			objA, err := txn.GetObject(objIds[0])
 			if err != nil {
 				return nil, err
@@ -88,13 +80,12 @@ func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations in
 			return nil, nil
 		})
 		if err != nil {
-			errCh <- err
-			return
+			return err
 		}
 		time.Sleep(7 * time.Millisecond)
 		n++
 		binary.BigEndian.PutUint64(buf, n)
-		_, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			objA, err := txn.GetObject(objIds[0])
 			if err != nil {
 				return nil, err
@@ -102,12 +93,11 @@ func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations in
 			return nil, objA.Set(buf)
 		})
 		if err != nil {
-			errCh <- err
-			return
+			return err
 		}
 		n++
 		binary.BigEndian.PutUint64(buf, n)
-		_, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			objA, err := txn.GetObject(objIds[0])
 			if err != nil {
 				return nil, err
@@ -115,10 +105,9 @@ func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations in
 			return nil, objA.Set(buf)
 		})
 		if err != nil {
-			errCh <- err
-			return
+			return err
 		}
-		res, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		res, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			objA, err := txn.GetObject(objIds[0])
 			if err != nil {
 				return nil, err
@@ -130,12 +119,11 @@ func runTest(connNum int, th *tests.TestHelper, vsn *common.TxnId, iterations in
 			return binary.BigEndian.Uint64(val), nil
 		})
 		if err != nil {
-			errCh <- err
-			return
+			return err
 		}
 		if m, ok := res.(uint64); !ok || m != n {
-			errCh <- fmt.Errorf("Expected %v got %v (%v)", n, m, ok)
-			return
+			return fmt.Errorf("Expected %v got %v (%v)", n, m, ok)
 		}
 	}
+	return nil
 }

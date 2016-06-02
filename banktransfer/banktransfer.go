@@ -17,12 +17,11 @@ func BankTransfer(th *tests.TestHelper) {
 	initialWealth := uint64(1000)
 	parTransfers := 8
 
-	th.CreateConnections(parTransfers + 1)
+	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
-	vsn, err := th.SetRootToNZeroObjs(accounts)
-	th.MaybeFatal(err)
-	_, _, err = th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+	vsn, _ := conn.SetRootToNZeroObjs(accounts)
+	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
@@ -31,9 +30,9 @@ func BankTransfer(th *tests.TestHelper) {
 		if err != nil {
 			return nil, err
 		}
+		buf := make([]byte, 8)
+		binary.BigEndian.PutUint64(buf, initialWealth)
 		for _, account := range refs {
-			buf := make([]byte, 8)
-			binary.BigEndian.PutUint64(buf, initialWealth)
 			err = account.Set(buf)
 			if err != nil {
 				return nil, err
@@ -45,14 +44,11 @@ func BankTransfer(th *tests.TestHelper) {
 
 	totalWealth := initialWealth * uint64(accounts)
 
-	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
+	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(parTransfers)
-	endBarrier.Add(parTransfers)
-	errCh := make(chan error, parTransfers)
-	for idx := 0; idx < parTransfers; idx++ {
-		connNum := idx + 1
-		go runTransfers(connNum, accounts, th, vsn, transfers, totalWealth, startBarrier, endBarrier, errCh)
-	}
+	endBarrier, errCh := th.InParallel(parTransfers, func(connIdx int, conn *tests.Connection) error {
+		return runTransfers(accounts, conn, vsn, transfers, totalWealth, startBarrier)
+	})
 
 	c := make(chan struct{})
 	go func() {
@@ -62,15 +58,15 @@ func BankTransfer(th *tests.TestHelper) {
 	}()
 
 	startBarrier.Wait()
-	observeTotalWealth(th, totalWealth, c)
+	observeTotalWealth(conn, totalWealth, c)
 	// ensure we do one final observation right at the end
-	observeTotalWealth(th, totalWealth, c)
+	observeTotalWealth(conn, totalWealth, c)
 	th.MaybeFatal(<-errCh)
 }
 
-func observeTotalWealth(th *tests.TestHelper, totalWealth uint64, terminate chan struct{}) {
+func observeTotalWealth(conn *tests.Connection, totalWealth uint64, terminate chan struct{}) {
 	for {
-		res, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
+		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			sum := uint64(0)
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
@@ -89,12 +85,12 @@ func observeTotalWealth(th *tests.TestHelper, totalWealth uint64, terminate chan
 			}
 			return sum, nil
 		})
-		th.MaybeFatal(err)
+		conn.MaybeFatal(err)
 		foundWealth := res.(uint64)
 		if foundWealth != totalWealth {
-			th.Fatal("FoundWealth != TotalWealth:", foundWealth, totalWealth)
+			conn.Fatal("FoundWealth != TotalWealth:", foundWealth, totalWealth)
 		} else {
-			th.Log(foundWealth)
+			conn.Log(foundWealth)
 		}
 		select {
 		case <-terminate:
@@ -104,16 +100,14 @@ func observeTotalWealth(th *tests.TestHelper, totalWealth uint64, terminate chan
 	}
 }
 
-func runTransfers(connNum, accounts int, th *tests.TestHelper, rootVsn *common.TxnId, transferCount int, totalWealth uint64, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
-	defer endBarrier.Done()
-	err := th.AwaitRootVersionChange(connNum, rootVsn)
+func runTransfers(accounts int, conn *tests.Connection, rootVsn *common.TxnId, transferCount int, totalWealth uint64, startBarrier *sync.WaitGroup) error {
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	err := conn.AwaitRootVersionChange(rootVsn)
 	startBarrier.Done()
 	if err != nil {
-		errCh <- err
-		return
+		return err
 	}
 	startBarrier.Wait()
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	bufFrom := make([]byte, 8)
 	bufTo := make([]byte, 8)
 	for ; transferCount > 0; transferCount-- {
@@ -123,7 +117,7 @@ func runTransfers(connNum, accounts int, th *tests.TestHelper, rootVsn *common.T
 		if to >= from {
 			to++
 		}
-		_, _, err := th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
+		_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
@@ -158,8 +152,8 @@ func runTransfers(connNum, accounts int, th *tests.TestHelper, rootVsn *common.T
 			return nil, toAccount.Set(bufTo)
 		})
 		if err != nil {
-			errCh <- err
-			return
+			return err
 		}
 	}
+	return nil
 }

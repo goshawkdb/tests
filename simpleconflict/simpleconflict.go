@@ -13,19 +13,15 @@ func SimpleConflict(th *tests.TestHelper) {
 	parCount := 5
 	objCount := 3
 	limit := uint64(1000)
-	th.CreateConnections(parCount)
+	conn := th.CreateConnections(1)[0]
 
 	defer th.Shutdown()
-	vsn, err := th.SetRootToNZeroObjs(objCount)
-	th.MaybeFatal(err)
-	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
+	vsn, _ := conn.SetRootToNZeroObjs(objCount)
+	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(parCount)
-	endBarrier.Add(parCount)
-	errCh := make(chan error, parCount)
-	for idx := 0; idx < parCount; idx++ {
-		idxCopy := idx
-		go runConflictCount(idxCopy, th, vsn, limit, startBarrier, endBarrier, errCh)
-	}
+	endBarrier, errCh := th.InParallel(parCount, func(idx int, conn *tests.Connection) error {
+		return runConflictCount(idx, conn, vsn, limit, startBarrier)
+	})
 	go func() {
 		endBarrier.Wait()
 		close(errCh)
@@ -33,17 +29,15 @@ func SimpleConflict(th *tests.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func runConflictCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit uint64, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
-	defer endBarrier.Done()
-	err := th.AwaitRootVersionChange(connIdx, rootVsn)
+func runConflictCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limit uint64, startBarrier *sync.WaitGroup) error {
+	err := conn.AwaitRootVersionChange(rootVsn)
 	startBarrier.Done()
 	if err != nil {
-		errCh <- err
-		return
+		return err
 	}
 	startBarrier.Wait()
 	objsVarUUIds := []*common.VarUUId{}
-	_, _, err = th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
+	_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		objsVarUUIds = objsVarUUIds[:0] // must reset the slice whenever we restart this txn
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
@@ -59,12 +53,11 @@ func runConflictCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, 
 		return nil, nil
 	})
 	if err != nil {
-		errCh <- err
-		return
+		return err
 	}
 	buf := make([]byte, 8)
 	for {
-		res, _, err := th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
+		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			obj, err := txn.GetObject(objsVarUUIds[0])
 			if err != nil {
 				return nil, err
@@ -101,11 +94,11 @@ func runConflictCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, 
 			return cur, nil
 		})
 		if err != nil {
-			errCh <- err
-			return
+			return err
 		}
 		if res.(uint64) == limit {
 			break
 		}
 	}
+	return nil
 }

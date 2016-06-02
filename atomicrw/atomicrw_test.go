@@ -11,8 +11,6 @@ import (
 // t2: if x%2 == 0 then {y = x+2} else {x = x+1}
 // Thus the only way that x goes odd is the first branch of t1. So if
 // we observe an odd x, then we must have x == y
-var hosts = []string{"localhost:10001", "localhost:10002", "localhost:10003"}
-
 func TestAtomicRW(t *testing.T) {
-	AtomicRW(tests.NewTestHelper(t, hosts...))
+	AtomicRW(tests.NewTestHelper(t))
 }
