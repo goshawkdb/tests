@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
+	"io/ioutil"
 	"log"
 	"os"
 	"runtime"
@@ -80,19 +81,33 @@ func NewTestHelper(t TestInterface) *TestHelper {
 		clusterHostsStr = defaultClusterHosts
 	}
 	clusterHosts := strings.Split(clusterHostsStr, ",")
-	clusterCert := os.Getenv("GOSHAWKDB_CLUSTER_CERT")
-	if len(clusterCert) == 0 {
-		clusterCert = defaultClusterCert
+	clusterCertPath := os.Getenv("GOSHAWKDB_CLUSTER_CERT")
+	var clusterCert []byte
+	if len(clusterCertPath) == 0 {
+		clusterCert = []byte(defaultClusterCert)
+	} else {
+		if contents, err := ioutil.ReadFile(clusterCertPath); err != nil {
+			t.Fatal(fmt.Sprintf("Error when loading the cluster cert from env var ('%s'): %v", clusterCertPath, err))
+		} else {
+			clusterCert = contents
+		}
 	}
-	clientKeyPair := os.Getenv("GOSHAWKDB_CLIENT_KEYPAIR")
-	if len(clientKeyPair) == 0 {
-		clientKeyPair = defaultClientKeyPair
+	var clientKeyPair []byte
+	clientKeyPairPath := os.Getenv("GOSHAWKDB_CLIENT_KEYPAIR")
+	if len(clientKeyPairPath) == 0 {
+		clientKeyPair = []byte(defaultClientKeyPair)
+	} else {
+		if contents, err := ioutil.ReadFile(clientKeyPairPath); err != nil {
+			t.Fatal(fmt.Sprintf("Error when loading the client key pair from env var ('%s'): %v", clientKeyPairPath, err))
+		} else {
+			clientKeyPair = contents
+		}
 	}
 	return &TestHelper{
 		TestInterface: t,
 		clusterHosts:  clusterHosts,
-		clusterCert:   []byte(clusterCert),
-		clientKeyPair: []byte(clientKeyPair),
+		clusterCert:   clusterCert,
+		clientKeyPair: clientKeyPair,
 	}
 }
 
