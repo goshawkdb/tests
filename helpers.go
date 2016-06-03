@@ -143,8 +143,7 @@ func (th *TestHelper) InParallel(n int, fun func(int, *Connection) error) (*sync
 		idxCopy, connCopy := idx, conn
 		go func() {
 			defer endBarrier.Done()
-			err := fun(idxCopy, connCopy)
-			if err != nil {
+			if err := fun(idxCopy, connCopy); err != nil {
 				errCh <- err
 			}
 		}()

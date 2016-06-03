@@ -52,7 +52,6 @@ func runTxn(conn *tests.Connection, rootVsn *common.TxnId, attempts int, startBa
 		return err
 	}
 	startBarrier.Wait()
-	buf := make([]byte, 8)
 	for ; attempts > 0; attempts-- {
 		time.Sleep(10 * time.Millisecond)
 		if attempts%2 == 0 {
@@ -72,17 +71,12 @@ func runTxn(conn *tests.Connection, rootVsn *common.TxnId, attempts int, startBa
 					return nil, err
 				}
 				x := binary.BigEndian.Uint64(xVal)
+				binary.BigEndian.PutUint64(xVal, x+1)
+				if err = xObj.Set(xVal); err != nil {
+					return nil, err
+				}
 				if x%2 == 0 {
-					binary.BigEndian.PutUint64(buf, x+1)
-					if err = xObj.Set(buf); err != nil {
-						return nil, err
-					}
-					if err = yObj.Set(buf); err != nil {
-						return nil, err
-					}
-				} else {
-					binary.BigEndian.PutUint64(buf, x+1)
-					if err = xObj.Set(buf); err != nil {
+					if err = yObj.Set(xVal); err != nil {
 						return nil, err
 					}
 				}
@@ -109,11 +103,11 @@ func runTxn(conn *tests.Connection, rootVsn *common.TxnId, attempts int, startBa
 				}
 				x := binary.BigEndian.Uint64(xVal)
 				if x%2 == 0 {
-					binary.BigEndian.PutUint64(buf, x+2)
-					return nil, yObj.Set(buf)
+					binary.BigEndian.PutUint64(xVal, x+2)
+					return nil, yObj.Set(xVal)
 				} else {
-					binary.BigEndian.PutUint64(buf, x+1)
-					return nil, xObj.Set(buf)
+					binary.BigEndian.PutUint64(xVal, x+1)
+					return nil, xObj.Set(xVal)
 				}
 			})
 			if err != nil {
@@ -148,12 +142,12 @@ func runObserver(conn *tests.Connection, terminate chan struct{}) {
 			if err != nil {
 				return nil, err
 			}
-			x := binary.BigEndian.Uint64(xVal)
+			x = binary.BigEndian.Uint64(xVal)
 			yVal, err := yObj.Value()
 			if err != nil {
 				return nil, err
 			}
-			y := binary.BigEndian.Uint64(yVal)
+			y = binary.BigEndian.Uint64(yVal)
 			if x%2 == 0 {
 				return nil, nil
 			} else {

@@ -16,7 +16,6 @@ func SoloCount(th *tests.TestHelper) {
 	c.SetRootToZeroUInt64()
 	encountered := make(map[uint64]bool)
 	expected := uint64(0)
-	buf := make([]byte, 8)
 	for {
 		res, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
@@ -33,8 +32,8 @@ func SoloCount(th *tests.TestHelper) {
 				return nil, fmt.Errorf("Expected to find %v but found %v", expected, cur)
 			}
 			cur++
-			binary.BigEndian.PutUint64(buf, cur)
-			if err := rootObj.Set(buf); err != nil {
+			binary.BigEndian.PutUint64(rootVal, cur)
+			if err := rootObj.Set(rootVal); err != nil {
 				return nil, err
 			}
 			return cur, nil

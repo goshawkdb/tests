@@ -33,8 +33,7 @@ func BankTransfer(th *tests.TestHelper) {
 		buf := make([]byte, 8)
 		binary.BigEndian.PutUint64(buf, initialWealth)
 		for _, account := range refs {
-			err = account.Set(buf)
-			if err != nil {
+			if err = account.Set(buf); err != nil {
 				return nil, err
 			}
 		}
@@ -66,6 +65,12 @@ func BankTransfer(th *tests.TestHelper) {
 
 func observeTotalWealth(conn *tests.Connection, totalWealth uint64, terminate chan struct{}) {
 	for {
+		select {
+		case <-terminate:
+			return
+		default:
+		}
+		time.Sleep(15 * time.Millisecond)
 		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			sum := uint64(0)
 			rootObj, err := txn.GetRootObject()
@@ -92,11 +97,6 @@ func observeTotalWealth(conn *tests.Connection, totalWealth uint64, terminate ch
 		} else {
 			conn.Log(foundWealth)
 		}
-		select {
-		case <-terminate:
-			return
-		default:
-		}
 	}
 }
 
@@ -108,10 +108,8 @@ func runTransfers(accounts int, conn *tests.Connection, rootVsn *common.TxnId, t
 		return err
 	}
 	startBarrier.Wait()
-	bufFrom := make([]byte, 8)
-	bufTo := make([]byte, 8)
 	for ; transferCount > 0; transferCount-- {
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 		from := rng.Intn(accounts)
 		to := rng.Intn(accounts - 1)
 		if to >= from {
@@ -144,12 +142,12 @@ func runTransfers(accounts int, conn *tests.Connection, rootVsn *common.TxnId, t
 			transfer := rng.Int63n(fromWealth)
 			fromWealth -= transfer
 			toWealth += transfer
-			binary.BigEndian.PutUint64(bufFrom, uint64(fromWealth))
-			binary.BigEndian.PutUint64(bufTo, uint64(toWealth))
-			if err = fromAccount.Set(bufFrom); err != nil {
+			binary.BigEndian.PutUint64(fromVal, uint64(fromWealth))
+			binary.BigEndian.PutUint64(toVal, uint64(toWealth))
+			if err = fromAccount.Set(fromVal); err != nil {
 				return nil, err
 			}
-			return nil, toAccount.Set(bufTo)
+			return nil, toAccount.Set(toVal)
 		})
 		if err != nil {
 			return err

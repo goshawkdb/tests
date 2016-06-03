@@ -6,6 +6,7 @@ import (
 	"goshawkdb.io/client"
 	"goshawkdb.io/tests"
 	"sync"
+	"time"
 )
 
 // Test that one write wakes up many retriers
@@ -60,17 +61,13 @@ func SimpleRetry(th *tests.TestHelper) {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, magicNumber)
 	startBarrier.Wait()
-
+	time.Sleep(250 * time.Millisecond)
 	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {
 			return nil, err
 		}
-		err = rootObj.Set(buf)
-		if err != nil {
-			return nil, err
-		}
-		return nil, nil
+		return nil, rootObj.Set(buf)
 	})
 	th.MaybeFatal(err)
 
@@ -144,6 +141,7 @@ func DisjointRetry(th *tests.TestHelper) {
 			}
 		}
 		if !triggered {
+			startBarrier.Done()
 			return fmt.Errorf("Found magic number in the right place without triggering the writer!")
 		}
 		return nil
@@ -152,6 +150,7 @@ func DisjointRetry(th *tests.TestHelper) {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, magicNumber)
 	startBarrier.Wait()
+	time.Sleep(250 * time.Millisecond)
 	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := txn.GetRootObject()
 		if err != nil {

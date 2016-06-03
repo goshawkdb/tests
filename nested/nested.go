@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"goshawkdb.io/client"
 	"goshawkdb.io/tests"
+	"time"
 )
 
 func NestedRead(th *tests.TestHelper) {
@@ -217,6 +218,7 @@ func NestedInnerRetry(th *tests.TestHelper) {
 			return err
 		}
 		<-signal
+		time.Sleep(250 * time.Millisecond)
 		_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := txn.GetRootObject()
 			if err != nil {
@@ -276,7 +278,7 @@ func NestedInnerCreate(th *tests.TestHelper) {
 				if err != nil {
 					return nil, err
 				}
-				return nil, rootObj.Set([]byte{}, obj)
+				return nil, rootObj.Set(nil, obj)
 			})
 			if err != nil {
 				return nil, err
@@ -310,8 +312,7 @@ func NestedInnerCreate(th *tests.TestHelper) {
 		if err != nil {
 			return nil, err
 		}
-		obj := refs[0]
-		val, err := obj.Value()
+		val, err := refs[0].Value()
 		if err != nil {
 			return nil, err
 		}

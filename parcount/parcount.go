@@ -45,8 +45,7 @@ func runCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limit 
 		if err != nil {
 			return nil, err
 		}
-		myObj := refs[connIdx]
-		myObjVarUUId = myObj.Id
+		myObjVarUUId = refs[connIdx].Id
 		return nil, nil
 	})
 	if err != nil {
@@ -54,7 +53,6 @@ func runCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limit 
 	}
 	encountered := make(map[uint64]bool)
 	expected := uint64(0)
-	buf := make([]byte, 8)
 	for {
 		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			obj, err := txn.GetObject(myObjVarUUId)
@@ -71,8 +69,8 @@ func runCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limit 
 				return nil, fmt.Errorf("%v, Expected to find %v but found %v", connIdx, expected, cur)
 			}
 			cur++
-			binary.BigEndian.PutUint64(buf, cur)
-			if err := obj.Set(buf); err != nil {
+			binary.BigEndian.PutUint64(val, cur)
+			if err := obj.Set(val); err != nil {
 				return nil, err
 			}
 			return cur, nil

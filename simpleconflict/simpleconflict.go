@@ -36,51 +36,32 @@ func runConflictCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId
 		return err
 	}
 	startBarrier.Wait()
-	objsVarUUIds := []*common.VarUUId{}
-	_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		objsVarUUIds = objsVarUUIds[:0] // must reset the slice whenever we restart this txn
-		rootObj, err := txn.GetRootObject()
-		if err != nil {
-			return nil, err
-		}
-		refs, err := rootObj.References()
-		if err != nil {
-			return nil, err
-		}
-		for _, obj := range refs {
-			objsVarUUIds = append(objsVarUUIds, obj.Id)
-		}
-		return nil, nil
-	})
-	if err != nil {
-		return err
-	}
-	buf := make([]byte, 8)
 	for {
 		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			obj, err := txn.GetObject(objsVarUUIds[0])
+			rootObj, err := txn.GetRootObject()
 			if err != nil {
 				return nil, err
 			}
-			val, err := obj.Value()
+			refs, err := rootObj.References()
 			if err != nil {
 				return nil, err
 			}
-			cur := binary.BigEndian.Uint64(val)
+			obj := refs[0]
+			val0, err := obj.Value()
+			if err != nil {
+				return nil, err
+			}
+			cur := binary.BigEndian.Uint64(val0)
 			limitReached := cur == limit
 			if !limitReached {
-				binary.BigEndian.PutUint64(buf, cur+1)
-				err := obj.Set(buf)
+				binary.BigEndian.PutUint64(val0, cur+1)
+				err := obj.Set(val0)
 				if err != nil {
 					return nil, err
 				}
 			}
-			for _, vUUId := range objsVarUUIds[1:] {
-				obj, err = txn.GetObject(vUUId)
-				if err != nil {
-					return nil, err
-				}
-				val, err = obj.Value()
+			for _, obj := range refs[1:] {
+				val, err := obj.Value()
 				if err != nil {
 					return nil, err
 				}
@@ -88,7 +69,7 @@ func runConflictCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId
 					return nil, fmt.Errorf("%v, Expected to find %v but found %v", connIdx, cur, num)
 				}
 				if !limitReached {
-					obj.Set(buf)
+					obj.Set(val0)
 				}
 			}
 			return cur, nil
