@@ -142,7 +142,7 @@ func InsertAndGetManyPar(th *tests.TestHelper) {
 
 		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 		objId, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -204,7 +204,7 @@ func InsertAndGetManyParPermutation(th *tests.TestHelper) {
 
 		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 		objId, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -257,7 +257,7 @@ func createSkipList(conn *tests.Connection) *sk.SkipList {
 		if err != nil {
 			return nil, err
 		}
-		rootObj, err := txn.GetRootObject()
+		rootObj, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}

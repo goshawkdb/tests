@@ -13,12 +13,12 @@ func NestedRead(th *tests.TestHelper) {
 
 	// Just read the root var from several nested txns
 	result, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj0, err := txn.GetRootObject()
+		rootObj0, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
 		result, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj1, err := txn.GetRootObject()
+			rootObj1, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -26,7 +26,7 @@ func NestedRead(th *tests.TestHelper) {
 				return nil, fmt.Errorf("Should have pointer equality between the same object in nested txns")
 			}
 			result, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-				rootObj2, err := txn.GetRootObject()
+				rootObj2, err := conn.GetRootObject(txn)
 				if err != nil {
 					return nil, err
 				}
@@ -63,7 +63,7 @@ func NestedWrite(th *tests.TestHelper) {
 
 	// A write made in a parent should be visible in the child
 	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj0, err := txn.GetRootObject()
+		rootObj0, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
@@ -72,7 +72,7 @@ func NestedWrite(th *tests.TestHelper) {
 			return nil, err
 		}
 		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj1, err := txn.GetRootObject()
+			rootObj1, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -88,7 +88,7 @@ func NestedWrite(th *tests.TestHelper) {
 				return nil, err
 			}
 			_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-				rootObj2, err := txn.GetRootObject()
+				rootObj2, err := conn.GetRootObject(txn)
 				if err != nil {
 					return nil, err
 				}
@@ -139,7 +139,7 @@ func NestedInnerAbort(th *tests.TestHelper) {
 	// A write made in a child which is aborted should not be seen in
 	// the parent
 	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj0, err := txn.GetRootObject()
+		rootObj0, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
@@ -148,7 +148,7 @@ func NestedInnerAbort(th *tests.TestHelper) {
 			return nil, err
 		}
 		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj1, err := txn.GetRootObject()
+			rootObj1, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -163,7 +163,7 @@ func NestedInnerAbort(th *tests.TestHelper) {
 				return nil, err
 			}
 			_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-				rootObj2, err := txn.GetRootObject()
+				rootObj2, err := conn.GetRootObject(txn)
 				if err != nil {
 					return nil, err
 				}
@@ -220,7 +220,7 @@ func NestedInnerRetry(th *tests.TestHelper) {
 		<-signal
 		time.Sleep(250 * time.Millisecond)
 		_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -232,7 +232,7 @@ func NestedInnerRetry(th *tests.TestHelper) {
 	// If a child txn issues a retry, the parent must restart.
 	conn.AwaitRootVersionChange(rootVsn)
 	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj0, err := txn.GetRootObject()
+		rootObj0, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
@@ -267,7 +267,7 @@ func NestedInnerCreate(th *tests.TestHelper) {
 	// A create made in a child, returned to the parent should both be
 	// directly usable and writable.
 	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+		rootObj, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
@@ -304,7 +304,7 @@ func NestedInnerCreate(th *tests.TestHelper) {
 	th.MaybeFatal(err)
 
 	result, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+		rootObj, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}

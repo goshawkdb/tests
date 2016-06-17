@@ -26,7 +26,7 @@ func SimpleRetry(th *tests.TestHelper) {
 		}
 		triggered := false
 		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -63,7 +63,7 @@ func SimpleRetry(th *tests.TestHelper) {
 	startBarrier.Wait()
 	time.Sleep(250 * time.Millisecond)
 	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+		rootObj, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
@@ -99,7 +99,7 @@ func DisjointRetry(th *tests.TestHelper) {
 		changed := []bool{}
 		_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			changed = changed[:0]
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -152,7 +152,7 @@ func DisjointRetry(th *tests.TestHelper) {
 	startBarrier.Wait()
 	time.Sleep(250 * time.Millisecond)
 	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+		rootObj, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}

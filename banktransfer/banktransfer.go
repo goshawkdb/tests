@@ -22,7 +22,7 @@ func BankTransfer(th *tests.TestHelper) {
 
 	vsn, _ := conn.SetRootToNZeroObjs(accounts)
 	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+		rootObj, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +73,7 @@ func observeTotalWealth(conn *tests.Connection, totalWealth uint64, terminate ch
 		time.Sleep(15 * time.Millisecond)
 		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			sum := uint64(0)
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -116,7 +116,7 @@ func runTransfers(accounts int, conn *tests.Connection, rootVsn *common.TxnId, t
 			to++
 		}
 		_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
