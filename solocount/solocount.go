@@ -18,7 +18,7 @@ func SoloCount(th *tests.TestHelper) {
 	expected := uint64(0)
 	for {
 		res, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := c.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}

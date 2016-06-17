@@ -56,7 +56,7 @@ func runTxn(conn *tests.Connection, rootVsn *common.TxnId, attempts int, startBa
 		time.Sleep(10 * time.Millisecond)
 		if attempts%2 == 0 {
 			_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-				rootObj, err := txn.GetRootObject()
+				rootObj, err := conn.GetRootObject(txn)
 				if err != nil {
 					return nil, err
 				}
@@ -87,7 +87,7 @@ func runTxn(conn *tests.Connection, rootVsn *common.TxnId, attempts int, startBa
 			}
 		} else {
 			_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-				rootObj, err := txn.GetRootObject()
+				rootObj, err := conn.GetRootObject(txn)
 				if err != nil {
 					return nil, err
 				}
@@ -128,7 +128,7 @@ func runObserver(conn *tests.Connection, terminate chan struct{}) {
 		}
 		time.Sleep(10 * time.Millisecond)
 		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}

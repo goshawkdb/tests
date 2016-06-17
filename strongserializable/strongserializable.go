@@ -41,7 +41,7 @@ func runTest(connNum int, conn *tests.Connection, vsn *common.TxnId, iterations 
 	startBarrier.Wait()
 	buf := make([]byte, 8)
 	res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+		rootObj, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}

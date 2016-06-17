@@ -45,6 +45,7 @@ AwEHoUQDQgAEWsA9x2XDkNZCZL2YIVcWUPpHwAFoF/gsDzbXBWY9r22Izqfy9Em9
 uYe5KPLwvAklFGOj0YmrsoPpmawr0/2xeA==
 -----END EC PRIVATE KEY-----`
 	defaultClusterHosts = "localhost"
+	defaultRootName     = "test"
 )
 
 type TestInterface interface {
@@ -60,6 +61,7 @@ type TestHelper struct {
 	clusterHosts  []string
 	clusterCert   []byte
 	clientKeyPair []byte
+	RootName      string
 }
 
 type TestHelperTxnResult uint8
@@ -103,11 +105,16 @@ func NewTestHelper(t TestInterface) *TestHelper {
 			clientKeyPair = contents
 		}
 	}
+	rootName := os.Getenv("GOSHAWKDB_ROOT_NAME")
+	if rootName == "" {
+		rootName = defaultRootName
+	}
 	return &TestHelper{
 		TestInterface: t,
 		clusterHosts:  clusterHosts,
 		clusterCert:   clusterCert,
 		clientKeyPair: clientKeyPair,
+		RootName:      rootName,
 	}
 }
 
@@ -166,6 +173,18 @@ func (th *TestHelper) InParallel(n int, fun func(int, *Connection) error) (*sync
 	return endBarrier, errCh
 }
 
+func (th *TestHelper) GetRootObject(txn *client.Txn) (*client.Object, error) {
+	rootObjs, err := txn.GetRootObjects()
+	if err != nil {
+		return nil, err
+	}
+	obj, found := rootObjs[th.RootName]
+	if !found {
+		return nil, fmt.Errorf("No root object named '%s' found", th.RootName)
+	}
+	return obj, nil
+}
+
 type Connection struct {
 	*TestHelper
 	*client.Connection
@@ -188,9 +207,13 @@ func (conn *Connection) SetRootToZeroUInt64() (*common.TxnId, error) {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, 0)
 	txnId, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+		rootObjs, err := txn.GetRootObjects()
 		if err != nil {
 			return nil, err
+		}
+		rootObj, found := rootObjs[conn.RootName]
+		if !found {
+			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
 		}
 		rootObj.Set(buf)
 		return rootObj.Version()
@@ -202,7 +225,7 @@ func (conn *Connection) SetRootToNZeroObjs(n int) (*common.TxnId, error) {
 	zeroBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(zeroBuf, 0)
 	txnId, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+		rootObjs, err := txn.GetRootObjects()
 		if err != nil {
 			return nil, err
 		}
@@ -212,6 +235,10 @@ func (conn *Connection) SetRootToNZeroObjs(n int) (*common.TxnId, error) {
 			if err != nil {
 				return nil, err
 			}
+		}
+		rootObj, found := rootObjs[conn.RootName]
+		if !found {
+			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
 		}
 		if err := rootObj.Set([]byte{}, objs...); err != nil {
 			return nil, err
@@ -223,9 +250,13 @@ func (conn *Connection) SetRootToNZeroObjs(n int) (*common.TxnId, error) {
 
 func (conn *Connection) AwaitRootVersionChange(vsn *common.TxnId) error {
 	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+		rootObjs, err := txn.GetRootObjects()
 		if err != nil {
 			return nil, err
+		}
+		rootObj, found := rootObjs[conn.RootName]
+		if !found {
+			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
 		}
 		if rootVsn, err := rootObj.Version(); err != nil {
 			return nil, err

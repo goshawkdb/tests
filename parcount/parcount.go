@@ -37,7 +37,7 @@ func runCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limit 
 	startBarrier.Wait()
 	var myObjVarUUId *common.VarUUId
 	_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+		rootObj, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}

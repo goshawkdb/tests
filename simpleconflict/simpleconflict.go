@@ -38,7 +38,7 @@ func runConflictCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId
 	startBarrier.Wait()
 	for {
 		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}

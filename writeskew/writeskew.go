@@ -55,7 +55,7 @@ func incr(connNum int, conn *tests.Connection, rootVsn *common.TxnId, itrs int, 
 	binary.BigEndian.PutUint64(buf, 1)
 	for ; itrs > 0; itrs-- {
 		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -109,7 +109,7 @@ func reset(conn *tests.Connection, rootVsn *common.TxnId, startBarrier *sync.Wai
 		default:
 		}
 		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}

@@ -50,6 +50,10 @@ are exactly the same as the Java client and work in the same way):
 * `GOSHAWKDB_CLIENT_KEYPAIR` This is a path to a file
   containing a client X.509 certificate and key pair which the client
   uses to authenticate to the server.
+* `GOSHAWKDB_ROOT_NAME` This is the name of the root object to use.
+  By default it is `test`. You must configure your GoshawkDB cluster to
+  have such a root object and it must be fully writable by the test
+  client account.
 
 If you set these in the terminal before invoking `go test` then
 they will be picked up.
