@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"goshawkdb.io/client"
 	"goshawkdb.io/tests"
+	"sync"
 	"time"
 )
 
@@ -211,13 +212,20 @@ func NestedInnerRetry(th *tests.TestHelper) {
 	defer th.Shutdown()
 
 	rootVsn, _ := conn.SetRootToZeroUInt64()
-	signal := make(chan struct{}, 1)
+
+	var o1 sync.Once
+	var o2 sync.Once
+	b1 := new(sync.WaitGroup) // for delaying start of 2nd txn
+	b2 := new(sync.WaitGroup) // for signalling back to the first txn to make the change
+	b1.Add(1)
+	b2.Add(1)
 
 	endBarrier, errCh := th.InParallel(1, func(connIdx int, conn *tests.Connection) error {
 		if err := conn.AwaitRootVersionChange(rootVsn); err != nil {
 			return err
 		}
-		<-signal
+		o1.Do(b1.Done)
+		b2.Wait()
 		time.Sleep(250 * time.Millisecond)
 		_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			rootObj, err := conn.GetRootObject(txn)
@@ -228,6 +236,8 @@ func NestedInnerRetry(th *tests.TestHelper) {
 		})
 		return err
 	})
+
+	b1.Wait()
 
 	// If a child txn issues a retry, the parent must restart.
 	conn.AwaitRootVersionChange(rootVsn)
@@ -246,7 +256,7 @@ func NestedInnerRetry(th *tests.TestHelper) {
 			_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 				// Even though we've not read root in this inner txn,
 				// retry should still work!
-				close(signal)
+				o2.Do(b2.Done)
 				return client.Retry, nil
 			})
 			return nil, err
