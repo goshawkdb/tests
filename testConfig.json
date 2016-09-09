@@ -10,10 +10,8 @@
     "ClientCertificateFingerprints": {
         "6c5b2b2efc0ef77248af64cda16445fdfe936c9f5484711d77c9d67bba5dfe44": {
             "test": {
-                "ValueRead": true,
-                "ValueWrite": true,
-                "ReferencesReadAll": true,
-                "ReferencesWriteAll": true
+                "Read": true,
+                "Write": true
             }
         }
     }
