@@ -13,6 +13,12 @@
                 "Read": true,
                 "Write": true
             }
+        },
+        "d61da08e2754e791aad2bc47e7ea651ce42ee15ccffdab96d1451f1f99ba1da7": {
+            "test": {
+                "Read": true,
+                "Write": false
+            }
         }
     }
 }
