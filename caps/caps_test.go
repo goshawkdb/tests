@@ -20,3 +20,15 @@ func TestWriteOnly(t *testing.T) {
 func TestReadWrite(t *testing.T) {
 	readWrite(tests.NewTestHelper(t))
 }
+
+func TestFakeRead(t *testing.T) {
+	fakeRead(tests.NewTestHelper(t))
+}
+
+func TestFakeWrite(t *testing.T) {
+	fakeWrite(tests.NewTestHelper(t))
+}
+
+func TestCapabilitiesCanGrow(t *testing.T) {
+	capabilitiesCanGrow(tests.NewTestHelper(t))
+}
