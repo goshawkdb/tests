@@ -92,16 +92,12 @@ func noneGetsNone(c1, c2 *client.Connection) error {
 			return nil, fmt.Errorf("Expected None capability; got %v", obj.Capability)
 		}
 		value, err := obj.Value()
-		fmt.Println("boo", value, err)
 		if err != nil {
-			return nil, err
+			// we should have got an error here
+			return nil, nil
 		}
-		if len(value) != 0 {
-			return nil, fmt.Errorf("Expected empty value; got %v", string(value))
-		}
-		return nil, nil
+		return nil, fmt.Errorf("Failed to error on attempted read; got value %v", value)
 	})
-	fmt.Println(err)
 	return err
 }
 

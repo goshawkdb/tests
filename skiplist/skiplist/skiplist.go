@@ -4,7 +4,6 @@ import (
 	"bytes"
 	capn "github.com/glycerine/go-capnproto"
 	"goshawkdb.io/client"
-	"goshawkdb.io/common"
 	msgs "goshawkdb.io/tests/skiplist/skiplist/capnp"
 	// "log"
 	"fmt"
@@ -19,13 +18,13 @@ const (
 
 type SkipList struct {
 	Connection *client.Connection
-	ObjId      *common.VarUUId
+	ObjId      client.ObjectCapabilityPair
 	rng        *rand.Rand
 }
 
 type Node struct {
 	SkipList *SkipList
-	ObjId    *common.VarUUId
+	ObjId    client.ObjectCapabilityPair
 }
 
 func NewSkipList(conn *client.Connection, rng *rand.Rand) (*SkipList, error) {
@@ -66,27 +65,27 @@ func NewSkipList(conn *client.Connection, rng *rand.Rand) (*SkipList, error) {
 		if err != nil {
 			return nil, err
 		}
-		//                               sl           val          prev
-		terminusRefs := []*client.Object{skipListObj, terminusObj, terminusObj}
+		//                                            sl           val          prev
+		terminusRefs := []client.ObjectCapabilityPair{skipListObj, terminusObj, terminusObj}
 		for idx := 0; idx < depth; idx++ {
 			terminusRefs = append(terminusRefs, terminusObj)
 		}
 		if err = terminusObj.Set(terminusBytes, terminusRefs...); err != nil {
 			return nil, err
 		}
-		return skipListObj.Id, nil
+		return skipListObj.ObjectCapabilityPair, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &SkipList{
 		Connection: conn,
-		ObjId:      result.(*common.VarUUId),
+		ObjId:      result.(client.ObjectCapabilityPair),
 		rng:        rng,
 	}, nil
 }
 
-func SkipListFromObjId(conn *client.Connection, rng *rand.Rand, objId *common.VarUUId) *SkipList {
+func SkipListFromObjId(conn *client.Connection, rng *rand.Rand, objId client.ObjectCapabilityPair) *SkipList {
 	return &SkipList{
 		Connection: conn,
 		ObjId:      objId,
@@ -100,7 +99,7 @@ func calculateCapacity(curDepth uint64) uint64 {
 	return uint64(math.Floor(capacity))
 }
 
-func (s *SkipList) within(fun func(*client.Object, []*client.Object, *msgs.SkipListCap, *client.Txn) (interface{}, error)) (interface{}, *client.Stats, error) {
+func (s *SkipList) within(fun func(client.ObjectCapabilityPair, []client.ObjectCapabilityPair, *msgs.SkipListCap, *client.Txn) (interface{}, error)) (interface{}, *client.Stats, error) {
 	return s.Connection.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		// log.Printf("within starting %v\n", fun)
 		sObj, err := txn.GetObject(s.ObjId)
@@ -120,7 +119,7 @@ func (s *SkipList) within(fun func(*client.Object, []*client.Object, *msgs.SkipL
 	})
 }
 
-func (s *SkipList) withinNode(nodeId *common.VarUUId, fun func(*msgs.SkipListNodeCap, *client.Object, []*client.Object, *client.Txn) (interface{}, error)) (interface{}, *client.Stats, error) {
+func (s *SkipList) withinNode(nodeId client.ObjectCapabilityPair, fun func(*msgs.SkipListNodeCap, client.ObjectCapabilityPair, []client.ObjectCapabilityPair, *client.Txn) (interface{}, error)) (interface{}, *client.Stats, error) {
 	return s.Connection.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		// log.Printf("withinNode starting %v\n", fun)
 		nObj, err := txn.GetObject(nodeId)
@@ -142,7 +141,7 @@ func (s *SkipList) withinNode(nodeId *common.VarUUId, fun func(*msgs.SkipListNod
 
 func (s *SkipList) chooseNumLevels() (float32, int, error) {
 	r := s.rng.Float32()
-	result, _, err := s.within(func(sObj *client.Object, sObjRefs []*client.Object, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
+	result, _, err := s.within(func(sObj client.ObjectCapabilityPair, sObjRefs []client.ObjectCapabilityPair, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
 		// log.Printf("chooseNumLevels starting\n")
 		// defer log.Printf("chooseNumLevels ended\n")
 		probs := sCap.LevelProbabilities()
@@ -161,7 +160,7 @@ func (s *SkipList) chooseNumLevels() (float32, int, error) {
 }
 
 func (s *SkipList) ensureCapacity() error {
-	_, _, err := s.within(func(sObj *client.Object, sObjRefs []*client.Object, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
+	_, _, err := s.within(func(sObj client.ObjectCapabilityPair, sObjRefs []client.ObjectCapabilityPair, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
 		// log.Printf("ensureCapacity starting\n")
 		// defer log.Printf("ensureCapacity ended\n")
 		if sCap.Length() < sCap.CurCapacity() {
@@ -210,7 +209,7 @@ func (s *SkipList) ensureCapacity() error {
 				return nil, err
 			}
 			next := curRefs[lvl]
-			newPrev, _, err := s.withinNode(cur.Id, func(curCap *msgs.SkipListNodeCap, curObj *client.Object, curRefs []*client.Object, txn *client.Txn) (interface{}, error) {
+			newPrev, _, err := s.withinNode(cur, func(curCap *msgs.SkipListNodeCap, curObj client.ObjectCapabilityPair, curRefs []client.ObjectCapabilityPair, txn *client.Txn) (interface{}, error) {
 				// log.Printf("ensureCapacity inner starting\n")
 				// defer log.Printf("ensureCapacity inner ended\n")
 				if curCap.HeightRand() <= threshold {
@@ -235,7 +234,7 @@ func (s *SkipList) ensureCapacity() error {
 						return nil, err
 					}
 
-					_, err = s.setNextKey(prev.Id, lvl-2, curCap.Key(), curObj)
+					_, err = s.setNextKey(prev.ObjectCapabilityPair, lvl-2, curCap.Key(), curObj)
 					if err != nil {
 						return nil, err
 					}
@@ -246,8 +245,8 @@ func (s *SkipList) ensureCapacity() error {
 			if err != nil {
 				return nil, err
 			}
-			prev = newPrev.(*client.Object)
-			if next.Id.Compare(tObj.Id) == common.EQ {
+			prev = newPrev.(client.ObjectCapabilityPair)
+			if next.ReferencesSame(tObj) {
 				break
 			} else {
 				cur = next
@@ -259,13 +258,13 @@ func (s *SkipList) ensureCapacity() error {
 	return err
 }
 
-func (s *SkipList) getEqOrLessThan(k []byte) (*client.Object, []*client.Object, error) {
-	var node *client.Object
-	var descent []*client.Object
-	_, _, err := s.within(func(sObj *client.Object, sObjRefs []*client.Object, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
+func (s *SkipList) getEqOrLessThan(k []byte) (client.ObjectCapabilityPair, []client.ObjectCapabilityPair, error) {
+	var node client.ObjectCapabilityPair
+	var descent []client.ObjectCapabilityPair
+	_, _, err := s.within(func(sObj client.ObjectCapabilityPair, sObjRefs []client.ObjectCapabilityPair, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
 		// log.Printf("getEqOrLessThan starting\n")
 		// defer log.Printf("getEqOrLessThan ended\n")
-		node, descent = nil, nil
+		descent = nil
 		tObj := sObjRefs[0]
 		cur := tObj
 		curRefs, err := cur.References()
@@ -273,7 +272,7 @@ func (s *SkipList) getEqOrLessThan(k []byte) (*client.Object, []*client.Object, 
 			return nil, err
 		}
 		lvl := len(curRefs) - 1
-		descent = make([]*client.Object, lvl-2)
+		descent = make([]client.ObjectCapabilityPair, lvl-2)
 		descent[lvl-3] = cur
 		for ; lvl >= 3; lvl-- {
 			for {
@@ -282,10 +281,10 @@ func (s *SkipList) getEqOrLessThan(k []byte) (*client.Object, []*client.Object, 
 					return nil, err
 				}
 				next := curRefs[lvl]
-				if next.Id.Compare(tObj.Id) == common.EQ {
+				if next.ReferencesSame(tObj) {
 					break
 				}
-				nextKey, _, err := s.withinNode(cur.Id, func(curCap *msgs.SkipListNodeCap, curObj *client.Object, curRefs []*client.Object, txn *client.Txn) (interface{}, error) {
+				nextKey, _, err := s.withinNode(cur, func(curCap *msgs.SkipListNodeCap, curObj client.ObjectCapabilityPair, curRefs []client.ObjectCapabilityPair, txn *client.Txn) (interface{}, error) {
 					// log.Printf("getEqOrLessThan inner starting\n")
 					// defer log.Printf("getEqOrLessThan inner ended\n")
 					return curCap.NextKeys().At(lvl - 3), nil
@@ -294,7 +293,7 @@ func (s *SkipList) getEqOrLessThan(k []byte) (*client.Object, []*client.Object, 
 					return nil, err
 				}
 				if len(nextKey.([]byte)) == 0 {
-					panic(fmt.Sprintf("Encountered empty key for node %v (which is not the terminus)", next.Id))
+					panic(fmt.Sprintf("Encountered empty key for node %v (which is not the terminus)", next.ObjectCapabilityPair))
 				}
 				if cmp := bytes.Compare(nextKey.([]byte), k); cmp < 0 {
 					cur = next
@@ -312,13 +311,13 @@ func (s *SkipList) getEqOrLessThan(k []byte) (*client.Object, []*client.Object, 
 	})
 	// log.Println("getEqOrLessThan done")
 	if err != nil {
-		return nil, nil, err
+		return client.ObjectCapabilityPair{}, nil, err
 	}
 	return node, descent, nil
 }
 
 func (s *SkipList) Insert(k, v []byte) (*Node, error) {
-	result, _, err := s.within(func(sObj *client.Object, sObjRefs []*client.Object, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
+	result, _, err := s.within(func(sObj client.ObjectCapabilityPair, sObjRefs []client.ObjectCapabilityPair, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
 		// log.Printf("insert starting\n")
 		// defer log.Printf("insert ended\n")
 		tObj := sObjRefs[0]
@@ -334,8 +333,8 @@ func (s *SkipList) Insert(k, v []byte) (*Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		if tObj.Id.Compare(curObj.Id) != common.EQ {
-			eq, _, err := s.withinNode(curObj.Id, func(nCap *msgs.SkipListNodeCap, nObj *client.Object, nRefs []*client.Object, txn *client.Txn) (interface{}, error) {
+		if tObj.ReferencesSame(curObj) {
+			eq, _, err := s.withinNode(curObj, func(nCap *msgs.SkipListNodeCap, nObj client.ObjectCapabilityPair, nRefs []client.ObjectCapabilityPair, txn *client.Txn) (interface{}, error) {
 				// log.Printf("insert inner starting\n")
 				// defer log.Printf("insert inner ended\n")
 				return bytes.Equal(nCap.Key(), k), nil
@@ -356,7 +355,7 @@ func (s *SkipList) Insert(k, v []byte) (*Node, error) {
 				if err = curObj.Set(curVal, curRefs...); err != nil {
 					return nil, err
 				}
-				return curObj.Id, nil
+				return curObj, nil
 			}
 		}
 		heightRand, height, err := s.chooseNumLevels()
@@ -373,7 +372,7 @@ func (s *SkipList) Insert(k, v []byte) (*Node, error) {
 		nodeNextKeys := nodeSeg.NewDataList(height)
 		nodeCap.SetNextKeys(nodeNextKeys)
 
-		nodeRefs := []*client.Object{sObj, vObj, curObj}
+		nodeRefs := []client.ObjectCapabilityPair{sObj, vObj, curObj}
 		for idx, pObj := range descent {
 			pObjRefs, err := pObj.References()
 			if err != nil {
@@ -401,7 +400,7 @@ func (s *SkipList) Insert(k, v []byte) (*Node, error) {
 		}
 
 		for idx, pObj := range descent {
-			nextKey, err := s.setNextKey(pObj.Id, idx, k, nObj)
+			nextKey, err := s.setNextKey(pObj, idx, k, nObj)
 			if err != nil {
 				return nil, err
 			}
@@ -433,20 +432,20 @@ func (s *SkipList) Insert(k, v []byte) (*Node, error) {
 			return nil, err
 		}
 
-		return nObj.Id, nil
+		return nObj, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &Node{
 		SkipList: s,
-		ObjId:    result.(*common.VarUUId),
+		ObjId:    result.(client.ObjectCapabilityPair),
 	}, nil
 }
 
-func (s *SkipList) removeNode(curObjId *common.VarUUId) error {
-	_, _, err := s.within(func(sObj *client.Object, sObjRefs []*client.Object, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
-		_, _, err := s.withinNode(curObjId, func(curCap *msgs.SkipListNodeCap, curObj *client.Object, curRefs []*client.Object, txn *client.Txn) (interface{}, error) {
+func (s *SkipList) removeNode(curObj client.ObjectCapabilityPair) error {
+	_, _, err := s.within(func(sObj client.ObjectCapabilityPair, sObjRefs []client.ObjectCapabilityPair, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
+		_, _, err := s.withinNode(curObj, func(curCap *msgs.SkipListNodeCap, curObj client.ObjectCapabilityPair, curRefs []client.ObjectCapabilityPair, txn *client.Txn) (interface{}, error) {
 			curKeys := curCap.NextKeys()
 			prevObj := curRefs[2]
 			nextObj := curRefs[3]
@@ -462,7 +461,7 @@ func (s *SkipList) removeNode(curObjId *common.VarUUId) error {
 			}
 			nextObj.Set(nextVal, nextRefs...)
 
-			k, _, err := s.withinNode(prevObj.Id, func(prevCap *msgs.SkipListNodeCap, prevObj *client.Object, prevRefs []*client.Object, txn *client.Txn) (interface{}, error) {
+			k, _, err := s.withinNode(prevObj, func(prevCap *msgs.SkipListNodeCap, prevObj client.ObjectCapabilityPair, prevRefs []client.ObjectCapabilityPair, txn *client.Txn) (interface{}, error) {
 				return prevCap.Key(), nil
 			})
 			if err != nil {
@@ -474,7 +473,7 @@ func (s *SkipList) removeNode(curObjId *common.VarUUId) error {
 			}
 
 			for idx, obj := range descent[:len(curRefs)-3] {
-				_, err := s.setNextKey(obj.Id, idx, curKeys.At(idx), curRefs[idx+3])
+				_, err := s.setNextKey(obj, idx, curKeys.At(idx), curRefs[idx+3])
 				if err != nil {
 					return nil, err
 				}
@@ -503,23 +502,23 @@ func (s *SkipList) removeNode(curObjId *common.VarUUId) error {
 }
 
 func (s *SkipList) refFromTerminus(idx int) (*Node, error) {
-	result, _, err := s.within(func(sObj *client.Object, sObjRefs []*client.Object, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
+	result, _, err := s.within(func(sObj client.ObjectCapabilityPair, sObjRefs []client.ObjectCapabilityPair, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
 		tObj := sObjRefs[0]
 		tObjRefs, err := tObj.References()
 		if err != nil {
 			return nil, err
 		}
 		firstObj := tObjRefs[idx]
-		if firstObj.Id.Compare(tObj.Id) == common.EQ {
+		if firstObj.ReferencesSame(tObj) {
 			return nil, nil
 		}
-		return firstObj.Id, nil
+		return firstObj, nil
 	})
-	id, ok := result.(*common.VarUUId)
+	id, ok := result.(client.ObjectCapabilityPair)
 	switch {
 	case err != nil:
 		return nil, err
-	case ok && id != nil:
+	case ok:
 		return &Node{SkipList: s, ObjId: id}, nil
 	default:
 		return nil, nil
@@ -527,7 +526,7 @@ func (s *SkipList) refFromTerminus(idx int) (*Node, error) {
 }
 
 func (s *SkipList) Length() (uint64, error) {
-	result, _, err := s.within(func(sObj *client.Object, sObjRefs []*client.Object, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
+	result, _, err := s.within(func(sObj client.ObjectCapabilityPair, sObjRefs []client.ObjectCapabilityPair, sCap *msgs.SkipListCap, txn *client.Txn) (interface{}, error) {
 		return sCap.Length(), nil
 	})
 	if err != nil {
@@ -560,34 +559,34 @@ func (s *SkipList) Get(k []byte) (*Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		if obj == nil || obj.Id.Compare(tObj.Id) == common.EQ {
+		if obj.ReferencesSame(tObj) {
 			return nil, nil
 		}
-		eq, _, err := s.withinNode(obj.Id, func(curCap *msgs.SkipListNodeCap, curObj *client.Object, curRefs []*client.Object, txn *client.Txn) (interface{}, error) {
+		eq, _, err := s.withinNode(obj, func(curCap *msgs.SkipListNodeCap, curObj client.ObjectCapabilityPair, curRefs []client.ObjectCapabilityPair, txn *client.Txn) (interface{}, error) {
 			return bytes.Equal(curCap.Key(), k), nil
 		})
 		if err != nil {
 			return nil, err
 		}
 		if eq.(bool) {
-			return obj.Id, nil
+			return obj, nil
 		} else {
 			return nil, nil
 		}
 	})
-	id, ok := result.(*common.VarUUId)
+	id, ok := result.(client.ObjectCapabilityPair)
 	switch {
 	case err != nil:
 		return nil, err
-	case ok && id != nil:
+	case ok:
 		return &Node{SkipList: s, ObjId: id}, nil
 	default:
 		return nil, nil
 	}
 }
 
-func (s *SkipList) setNextKey(objId *common.VarUUId, lvl int, newKey []byte, newObj *client.Object) ([]byte, error) {
-	result, _, err := s.withinNode(objId, func(curCap *msgs.SkipListNodeCap, curObj *client.Object, curRefs []*client.Object, txn *client.Txn) (interface{}, error) {
+func (s *SkipList) setNextKey(objId client.ObjectCapabilityPair, lvl int, newKey []byte, newObj client.ObjectCapabilityPair) ([]byte, error) {
+	result, _, err := s.withinNode(objId, func(curCap *msgs.SkipListNodeCap, curObj client.ObjectCapabilityPair, curRefs []client.ObjectCapabilityPair, txn *client.Txn) (interface{}, error) {
 		newSeg := capn.NewBuffer(nil)
 		newCap := msgs.NewRootSkipListNodeCap(newSeg)
 		newCap.SetHeightRand(curCap.HeightRand())
@@ -617,7 +616,7 @@ func (s *SkipList) setNextKey(objId *common.VarUUId, lvl int, newKey []byte, new
 }
 
 func (n *Node) Key() ([]byte, error) {
-	result, _, err := n.SkipList.withinNode(n.ObjId, func(curCap *msgs.SkipListNodeCap, curObj *client.Object, curRefs []*client.Object, txn *client.Txn) (interface{}, error) {
+	result, _, err := n.SkipList.withinNode(n.ObjId, func(curCap *msgs.SkipListNodeCap, curObj client.ObjectCapabilityPair, curRefs []client.ObjectCapabilityPair, txn *client.Txn) (interface{}, error) {
 		return curCap.Key(), nil
 	})
 	if err != nil {
@@ -674,16 +673,16 @@ func (n *Node) refFrom(idx int) (*Node, error) {
 			return nil, err
 		}
 		nObj := cObjRefs[idx]
-		if nObj.Id.Compare(tObj.Id) == common.EQ {
+		if nObj.ReferencesSame(tObj) {
 			return nil, nil
 		}
-		return nObj.Id, nil
+		return nObj, nil
 	})
-	id, ok := result.(*common.VarUUId)
+	id, ok := result.(client.ObjectCapabilityPair)
 	switch {
 	case err != nil:
 		return nil, err
-	case ok && id != nil:
+	case ok:
 		return &Node{SkipList: n.SkipList, ObjId: id}, nil
 	default:
 		return nil, nil
@@ -700,7 +699,7 @@ func (n *Node) Remove() error {
 		if err != nil {
 			return nil, err
 		}
-		if m.ObjId.Compare(n.ObjId) == common.EQ {
+		if m.ObjId.ReferencesSame(n.ObjId) {
 			return nil, n.SkipList.removeNode(n.ObjId)
 		}
 		return nil, nil
@@ -709,5 +708,5 @@ func (n *Node) Remove() error {
 }
 
 func (a *Node) Equal(b *Node) bool {
-	return a.ObjId.Compare(b.ObjId) == common.EQ
+	return a.ObjId.ReferencesSame(b.ObjId)
 }

@@ -3,7 +3,6 @@ package skiplist
 import (
 	"encoding/binary"
 	"goshawkdb.io/client"
-	"goshawkdb.io/common"
 	"goshawkdb.io/tests"
 	sk "goshawkdb.io/tests/skiplist/skiplist"
 	"log"
@@ -150,18 +149,18 @@ func InsertAndGetManyPar(th *tests.TestHelper) {
 			if err != nil {
 				return nil, err
 			}
-			slRootObjId := rootRefs[0].Id
-			if slRootObjId.Compare(sl.ObjId) == common.EQ {
-				return slRootObjId, nil
+			slRootObj := rootRefs[0]
+			if slRootObj.ReferencesSame(sl.ObjId) {
+				return slRootObj, nil
 			} else {
-				th.Log("retrying", sl.ObjId, "!=", slRootObjId)
+				th.Log("retrying", sl.ObjId, "!=", slRootObj)
 				return client.Retry, nil
 			}
 		})
 		if err != nil {
 			return err
 		}
-		slCopy := sk.SkipListFromObjId(conn.Connection, rng, objId.(*common.VarUUId))
+		slCopy := sk.SkipListFromObjId(conn.Connection, rng, objId.(client.ObjectCapabilityPair))
 		key, value := make([]byte, 8), make([]byte, 8)
 		for idx := connIdx; idx < limit; idx = idx + par {
 			log.Println(connIdx, idx)
@@ -212,18 +211,18 @@ func InsertAndGetManyParPermutation(th *tests.TestHelper) {
 			if err != nil {
 				return nil, err
 			}
-			slRootObjId := rootRefs[0].Id
-			if slRootObjId.Compare(sl.ObjId) == common.EQ {
-				return slRootObjId, nil
+			slRootObj := rootRefs[0]
+			if slRootObj.ReferencesSame(sl.ObjId) {
+				return slRootObj, nil
 			} else {
-				th.Log("retrying", sl.ObjId, "!=", slRootObjId)
+				th.Log("retrying", sl.ObjId, "!=", slRootObj)
 				return client.Retry, nil
 			}
 		})
 		if err != nil {
 			return err
 		}
-		slCopy := sk.SkipListFromObjId(conn.Connection, rng, objId.(*common.VarUUId))
+		slCopy := sk.SkipListFromObjId(conn.Connection, rng, objId.(client.ObjectCapabilityPair))
 		keys := rng.Perm(limit)
 		key, value := make([]byte, 8), make([]byte, 8)
 		for idx, base := range keys {
