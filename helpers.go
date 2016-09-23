@@ -173,14 +173,14 @@ func (th *TestHelper) InParallel(n int, fun func(int, *Connection) error) (*sync
 	return endBarrier, errCh
 }
 
-func (th *TestHelper) GetRootObject(txn *client.Txn) (client.ObjectCapabilityPair, error) {
+func (th *TestHelper) GetRootObject(txn *client.Txn) (client.ObjectRef, error) {
 	rootObjs, err := txn.GetRootObjects()
 	if err != nil {
-		return client.ObjectCapabilityPair{}, err
+		return client.ObjectRef{}, err
 	}
 	obj, found := rootObjs[th.RootName]
 	if !found {
-		return client.ObjectCapabilityPair{}, fmt.Errorf("No root object named '%s' found", th.RootName)
+		return client.ObjectRef{}, fmt.Errorf("No root object named '%s' found", th.RootName)
 	}
 	return obj, nil
 }
@@ -229,13 +229,13 @@ func (conn *Connection) SetRootToNZeroObjs(n int) (*common.TxnId, error) {
 		if err != nil {
 			return nil, err
 		}
-		objs := make([]client.ObjectCapabilityPair, n)
+		objs := make([]client.ObjectRef, n)
 		for idx := range objs {
 			obj, err := txn.CreateObject(zeroBuf)
 			if err != nil {
 				return nil, err
 			}
-			objs[idx] = obj.GrantCapability(client.ReadWrite)
+			objs[idx] = obj
 		}
 		rootObj, found := rootObjs[conn.RootName]
 		if !found {

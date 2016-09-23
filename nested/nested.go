@@ -281,7 +281,7 @@ func NestedInnerCreate(th *tests.TestHelper) {
 		if err != nil {
 			return nil, err
 		}
-		var obj client.ObjectCapabilityPair
+		var obj client.ObjectRef
 		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 				obj, err = txn.CreateObject([]byte("Hello"))
@@ -297,7 +297,7 @@ func NestedInnerCreate(th *tests.TestHelper) {
 			if err != nil {
 				return nil, err
 			}
-			if refs[0].Object != obj.Object {
+			if !refs[0].ReferencesSameAs(obj) {
 				return nil, fmt.Errorf("On return, expected to find obj in references of root")
 			}
 			val, err := obj.Value()

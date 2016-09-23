@@ -49,12 +49,12 @@ func runTest(connNum int, conn *tests.Connection, vsn *common.TxnId, iterations 
 		if err != nil {
 			return nil, err
 		}
-		return []client.ObjectCapabilityPair{objRefs[connNum+connNum], objRefs[connNum+connNum+1]}, nil
+		return []client.ObjectRef{objRefs[connNum+connNum], objRefs[connNum+connNum+1]}, nil
 	})
 	if err != nil {
 		return err
 	}
-	objIds, ok := res.([]client.ObjectCapabilityPair)
+	objRefs, ok := res.([]client.ObjectRef)
 	if !ok {
 		return fmt.Errorf("Returned result is not a [] var uuid!")
 	}
@@ -63,11 +63,11 @@ func runTest(connNum int, conn *tests.Connection, vsn *common.TxnId, iterations 
 		n := uint64(iterations)
 		binary.BigEndian.PutUint64(buf, n)
 		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			objA, err := txn.GetObject(objIds[0])
+			objA, err := txn.GetObject(objRefs[0])
 			if err != nil {
 				return nil, err
 			}
-			objB, err := txn.GetObject(objIds[1])
+			objB, err := txn.GetObject(objRefs[1])
 			if err != nil {
 				return nil, err
 			}
@@ -86,7 +86,7 @@ func runTest(connNum int, conn *tests.Connection, vsn *common.TxnId, iterations 
 		n++
 		binary.BigEndian.PutUint64(buf, n)
 		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			objA, err := txn.GetObject(objIds[0])
+			objA, err := txn.GetObject(objRefs[0])
 			if err != nil {
 				return nil, err
 			}
@@ -98,7 +98,7 @@ func runTest(connNum int, conn *tests.Connection, vsn *common.TxnId, iterations 
 		n++
 		binary.BigEndian.PutUint64(buf, n)
 		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			objA, err := txn.GetObject(objIds[0])
+			objA, err := txn.GetObject(objRefs[0])
 			if err != nil {
 				return nil, err
 			}
@@ -108,7 +108,7 @@ func runTest(connNum int, conn *tests.Connection, vsn *common.TxnId, iterations 
 			return err
 		}
 		res, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			objA, err := txn.GetObject(objIds[0])
+			objA, err := txn.GetObject(objRefs[0])
 			if err != nil {
 				return nil, err
 			}

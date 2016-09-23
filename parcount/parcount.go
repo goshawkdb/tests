@@ -35,7 +35,7 @@ func runCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limit 
 		return err
 	}
 	startBarrier.Wait()
-	var myObjVarUUId client.ObjectCapabilityPair
+	var myObjRef client.ObjectRef
 	_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		rootObj, err := conn.GetRootObject(txn)
 		if err != nil {
@@ -45,7 +45,7 @@ func runCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limit 
 		if err != nil {
 			return nil, err
 		}
-		myObjVarUUId = refs[connIdx]
+		myObjRef = refs[connIdx]
 		return nil, nil
 	})
 	if err != nil {
@@ -55,7 +55,7 @@ func runCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limit 
 	expected := uint64(0)
 	for {
 		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			obj, err := txn.GetObject(myObjVarUUId)
+			obj, err := txn.GetObject(myObjRef)
 			if err != nil {
 				return nil, err
 			}
