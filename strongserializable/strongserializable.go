@@ -49,12 +49,12 @@ func runTest(connNum int, conn *tests.Connection, vsn *common.TxnId, iterations 
 		if err != nil {
 			return nil, err
 		}
-		return []*common.VarUUId{objRefs[connNum+connNum].Id, objRefs[connNum+connNum+1].Id}, nil
+		return []client.ObjectCapabilityPair{objRefs[connNum+connNum], objRefs[connNum+connNum+1]}, nil
 	})
 	if err != nil {
 		return err
 	}
-	objIds, ok := res.([]*common.VarUUId)
+	objIds, ok := res.([]client.ObjectCapabilityPair)
 	if !ok {
 		return fmt.Errorf("Returned result is not a [] var uuid!")
 	}
