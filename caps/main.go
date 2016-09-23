@@ -55,6 +55,56 @@ G7gTvZ//cEUcnz0m+clKgi3xPmXK/69lRQ==
 -----END EC PRIVATE KEY-----`
 )
 
+func noneGetsNone(c1, c2 *client.Connection) error {
+	// c1 writes a ref to root with none caps
+	_, _, err := c1.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+		roots, err := txn.GetRootObjects()
+		if err != nil {
+			return nil, err
+		}
+		obj, err := txn.CreateObject([]byte("Hello World"))
+		if err != nil {
+			return nil, err
+		}
+		nonePtr := obj.GrantCapability(client.None)
+		root := roots["test"]
+		return nil, root.Set([]byte{}, nonePtr)
+	})
+	if err != nil {
+		return err
+	}
+	// c2 shouldn't be able to read it
+	_, _, err = c2.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+		roots, err := txn.GetRootObjects()
+		if err != nil {
+			return nil, err
+		}
+		root := roots["test"]
+		refs, err := root.References()
+		if err != nil {
+			return nil, err
+		}
+		if len(refs) != 1 {
+			return nil, fmt.Errorf("Expected root to have 1 reference; got %v", len(refs))
+		}
+		obj := refs[0]
+		if obj.Capability() != client.None {
+			return nil, fmt.Errorf("Expected None capability; got %v", obj.Capability)
+		}
+		value, err := obj.Value()
+		fmt.Println("boo", value, err)
+		if err != nil {
+			return nil, err
+		}
+		if len(value) != 0 {
+			return nil, fmt.Errorf("Expected empty value; got %v", string(value))
+		}
+		return nil, nil
+	})
+	fmt.Println(err)
+	return err
+}
+
 func main() {
 	port := 7894
 
@@ -68,6 +118,10 @@ func main() {
 		log.Fatalln(err)
 	}
 	defer conn2.Shutdown()
+
+	if err = noneGetsNone(conn1, conn2); err != nil {
+		log.Fatalln(err)
+	}
 
 	_, _, err = conn1.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		roots, err := txn.GetRootObjects()
