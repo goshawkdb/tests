@@ -29,6 +29,10 @@ func TestFakeWrite(t *testing.T) {
 	fakeWrite(tests.NewTestHelper(t))
 }
 
-func TestCapabilitiesCanGrow(t *testing.T) {
-	capabilitiesCanGrow(tests.NewTestHelper(t))
+func TestCapabilitiesCanGrowSingleTxn(t *testing.T) {
+	capabilitiesCanGrowSingleTxn(tests.NewTestHelper(t))
+}
+
+func TestCapabilitiesCanGrowMultiTxn(t *testing.T) {
+	capabilitiesCanGrowMultiTxn(tests.NewTestHelper(t))
 }

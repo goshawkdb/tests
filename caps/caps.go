@@ -24,8 +24,8 @@ func createObjOffRoot(c *tests.Connection, cap client.Capability, value []byte) 
 	}
 }
 
-func attemptRead(c *tests.Connection, cap client.Capability, value []byte) {
-	canRead := cap == client.Read || cap == client.ReadWrite
+func attemptRead(c *tests.Connection, refsLen, refsIdx int, refCap, objCap client.Capability, value []byte) {
+	canRead := objCap == client.Read || objCap == client.ReadWrite
 	result, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		root, err := c.GetRootObject(txn)
 		if err != nil {
@@ -35,12 +35,15 @@ func attemptRead(c *tests.Connection, cap client.Capability, value []byte) {
 		if err != nil {
 			return nil, err
 		}
-		if len(refs) != 1 {
+		if len(refs) != refsLen {
 			return nil, fmt.Errorf("Expected root to have 1 reference; got %v", len(refs))
 		}
-		obj := refs[0]
-		if objCap := obj.Capability(); objCap != cap {
-			return nil, fmt.Errorf("Expected %v capability; got %v", cap, objCap)
+		obj := refs[refsIdx]
+		if cap := obj.RefCapability(); cap != refCap {
+			return nil, fmt.Errorf("Expected %v reference capability; got %v", refCap, cap)
+		}
+		if cap := obj.ObjectCapability(); cap != objCap {
+			return nil, fmt.Errorf("Expected %v object capability; got %v", objCap, cap)
 		}
 		if canRead {
 			return obj.Value()
@@ -62,8 +65,8 @@ func attemptRead(c *tests.Connection, cap client.Capability, value []byte) {
 	}
 }
 
-func attemptWrite(c *tests.Connection, cap client.Capability, value []byte) {
-	canWrite := cap == client.Write || cap == client.ReadWrite
+func attemptWrite(c *tests.Connection, refsLen, refsIdx int, refCap, objCap client.Capability, value []byte) {
+	canWrite := objCap == client.Write || objCap == client.ReadWrite
 	_, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		root, err := c.GetRootObject(txn)
 		if err != nil {
@@ -73,12 +76,15 @@ func attemptWrite(c *tests.Connection, cap client.Capability, value []byte) {
 		if err != nil {
 			return nil, err
 		}
-		if len(refs) != 1 {
+		if len(refs) != refsLen {
 			return nil, fmt.Errorf("Expected root to have 1 reference; got %v", len(refs))
 		}
-		obj := refs[0]
-		if objCap := obj.Capability(); objCap != cap {
-			return nil, fmt.Errorf("Expected %v capability; got %v", cap, objCap)
+		obj := refs[refsIdx]
+		if cap := obj.RefCapability(); cap != refCap {
+			return nil, fmt.Errorf("Expected %v reference capability; got %v", refCap, cap)
+		}
+		if cap := obj.ObjectCapability(); cap != objCap {
+			return nil, fmt.Errorf("Expected %v object capability; got %v", objCap, cap)
 		}
 		if canWrite {
 			return nil, obj.Set(value)
@@ -104,9 +110,9 @@ func none(th *tests.TestHelper) {
 	// c1 writes a ref to root with none caps
 	createObjOffRoot(c1, client.None, []byte("Hello World"))
 	// c2 shouldn't be able to read it
-	attemptRead(c2, client.None, nil)
+	attemptRead(c2, 1, 0, client.None, client.None, nil)
 	// and c2 shouldn't be able to write it
-	attemptWrite(c2, client.None, []byte("illegal"))
+	attemptWrite(c2, 1, 0, client.None, client.None, []byte("illegal"))
 }
 
 func readOnly(th *tests.TestHelper) {
@@ -117,9 +123,9 @@ func readOnly(th *tests.TestHelper) {
 	// c1 writes a ref to root with read only caps
 	createObjOffRoot(c1, client.Read, []byte("Hello World"))
 	// c2 should be able to read it
-	attemptRead(c2, client.Read, []byte("Hello World"))
+	attemptRead(c2, 1, 0, client.Read, client.Read, []byte("Hello World"))
 	// but c2 shouldn't be able to write it
-	attemptWrite(c2, client.Read, []byte("illegal"))
+	attemptWrite(c2, 1, 0, client.Read, client.Read, []byte("illegal"))
 }
 
 func writeOnly(th *tests.TestHelper) {
@@ -130,12 +136,12 @@ func writeOnly(th *tests.TestHelper) {
 	// c1 writes a ref to root with write only caps
 	createObjOffRoot(c1, client.Write, []byte("Hello World"))
 	// c2 shouldn't be able to read it
-	attemptRead(c2, client.Write, nil)
+	attemptRead(c2, 1, 0, client.Write, client.Write, nil)
 	// but c2 should be able to write it
-	attemptWrite(c2, client.Write, []byte("Goodbye World"))
+	attemptWrite(c2, 1, 0, client.Write, client.Write, []byte("Goodbye World"))
 	// and c1 should be able to read it, as it created it, even though
 	// it'll only find a Write capability on the ref.
-	attemptRead(c1, client.Write, []byte("Goodbye World"))
+	attemptRead(c1, 1, 0, client.Write, client.ReadWrite, []byte("Goodbye World"))
 }
 
 func readWrite(th *tests.TestHelper) {
@@ -146,11 +152,11 @@ func readWrite(th *tests.TestHelper) {
 	// c1 writes a ref to root with read-write caps
 	createObjOffRoot(c1, client.ReadWrite, []byte("Hello World"))
 	// c2 should be able to read it
-	attemptRead(c2, client.ReadWrite, []byte("Hello World"))
+	attemptRead(c2, 1, 0, client.ReadWrite, client.ReadWrite, []byte("Hello World"))
 	// and c2 should be able to write it
-	attemptWrite(c2, client.ReadWrite, []byte("Goodbye World"))
+	attemptWrite(c2, 1, 0, client.ReadWrite, client.ReadWrite, []byte("Goodbye World"))
 	// and c1 should be able to read it.
-	attemptRead(c1, client.ReadWrite, []byte("Goodbye World"))
+	attemptRead(c1, 1, 0, client.ReadWrite, client.ReadWrite, []byte("Goodbye World"))
 }
 
 func fakeRead(th *tests.TestHelper) {
@@ -161,7 +167,7 @@ func fakeRead(th *tests.TestHelper) {
 	// c1 writes a ref to root with write-only caps
 	createObjOffRoot(c1, client.Write, []byte("Hello World"))
 	// c2 shouldn't be able to read it
-	attemptRead(c2, client.Write, nil)
+	attemptRead(c2, 1, 0, client.Write, client.Write, nil)
 	// and even if we're bad and fake the capability, we shouldn't be
 	// able to read it. There is no point faking it locally only as the
 	// server hasn't sent c2 the value. So the only hope is to fake it
@@ -197,7 +203,7 @@ func fakeWrite(th *tests.TestHelper) {
 	// c1 writes a ref to root with read-only caps
 	createObjOffRoot(c1, client.Read, []byte("Hello World"))
 	// c2 shouldn't be able to write it
-	attemptWrite(c2, client.Read, []byte("illegal"))
+	attemptWrite(c2, 1, 0, client.Read, client.Read, []byte("illegal"))
 	// and even if we're bad and fake the capability, we shouldn't be
 	// able to read it. There is no point faking it locally only as the
 	// server hasn't sent c2 the value. So the only hope is to fake it
@@ -225,7 +231,7 @@ func fakeWrite(th *tests.TestHelper) {
 	}
 }
 
-func capabilitiesCanGrow(th *tests.TestHelper) {
+func capabilitiesCanGrowSingleTxn(th *tests.TestHelper) {
 	defer th.Shutdown()
 	conns := th.CreateConnections(2)
 	c1, c2 := conns[0], conns[1]
@@ -236,11 +242,56 @@ func capabilitiesCanGrow(th *tests.TestHelper) {
 	//       \       v              /
 	//        \-n-> obj1 <--w------/
 	//
-	// The point is that when c2 only reaches root, it should have no
-	// access to obj1.  After it's reached obj3 it should be able to
-	// read only obj1. After it's reached obj2, it should have
-	// read-write access to obj1.
+	// However, because we're creating this whole structure in a single
+	// txn, c2 will get told about the whole txn in one go, and so
+	// should immediately learn that obj1 is read-write.
 
+	_, _, err := c1.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+		root, err := c1.GetRootObject(txn)
+		if err != nil {
+			return nil, err
+		}
+		obj1, err := txn.CreateObject([]byte("Hello World"))
+		if err != nil {
+			return nil, err
+		}
+		obj2, err := txn.CreateObject([]byte{}, obj1.GrantCapability(client.Write))
+		if err != nil {
+			return nil, err
+		}
+		obj3, err := txn.CreateObject([]byte{}, obj2, obj1.GrantCapability(client.Read))
+		if err != nil {
+			return nil, err
+		}
+		return nil, root.Set([]byte{}, obj3, obj1.GrantCapability(client.None))
+	})
+	if err != nil {
+		th.Fatal(err)
+	}
+	attemptRead(c2, 2, 1, client.None, client.ReadWrite, []byte("Hello World"))
+	attemptWrite(c2, 2, 1, client.None, client.ReadWrite, []byte("Goodbye World"))
+	attemptRead(c1, 2, 1, client.None, client.ReadWrite, []byte("Goodbye World"))
+}
+
+func capabilitiesCanGrowMultiTxn(th *tests.TestHelper) {
+	defer th.Shutdown()
+	conns := th.CreateConnections(2)
+	c1, c2 := conns[0], conns[1]
+
+	// we want to construct the same graph as last time:
+	// root --rw--> obj3 --rw--> obj2
+	//     1\   0   1|r      0     0|
+	//       \       v              /
+	//        \-n-> obj1 <--w------/
+	//
+	// This time though we do it in multiple txns which means c2 will
+	// actually have to read bits to finally discover its full
+	// capabilities on obj1: The point is that when c2 only reaches
+	// root, it should have no access to obj1.  After it's reached obj3
+	// it should be able to read only obj1. After it's reached obj2, it
+	// should have read-write access to obj1.
+
+	// txn1: create all the objs, but only have root point to obj1.
 	_, _, err := c1.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		root, err := c1.GetRootObject(txn)
 		if err != nil {
@@ -254,14 +305,8 @@ func capabilitiesCanGrow(th *tests.TestHelper) {
 		if err != nil {
 			return nil, err
 		}
-		obj3, err := txn.CreateObject([]byte{})
+		obj3, err := txn.CreateObject([]byte{}, obj2)
 		if err != nil {
-			return nil, err
-		}
-		if err = obj2.Set([]byte{}, obj1.GrantCapability(client.Write)); err != nil {
-			return nil, err
-		}
-		if err = obj3.Set([]byte{}, obj2, obj1.GrantCapability(client.Read)); err != nil {
 			return nil, err
 		}
 		return nil, root.Set([]byte{}, obj3, obj1.GrantCapability(client.None))
@@ -269,146 +314,75 @@ func capabilitiesCanGrow(th *tests.TestHelper) {
 	if err != nil {
 		th.Fatal(err)
 	}
-
-	// just read root first
-	_, _, err = c2.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		root, err := c2.GetRootObject(txn)
+	// txn2: add the read pointer from obj3 to obj1
+	_, _, err = c1.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+		root, err := c1.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
-		refs, err := root.References()
+		rootRefs, err := root.References()
 		if err != nil {
 			return nil, err
 		}
-		if len(refs) != 2 {
-			return nil, fmt.Errorf("Expected root to have 2 reference; got %v", len(refs))
+		obj3 := rootRefs[0]
+		obj1 := rootRefs[1]
+		obj3Refs, err := obj3.References()
+		if err != nil {
+			return nil, err
 		}
-		obj1 := refs[1]
-		if objCap := obj1.Capability(); objCap != client.None {
-			return nil, fmt.Errorf("Expected None capability; got %v", objCap)
-		}
-		objValue, err := obj1.Value()
-		if err == nil {
-			return nil, fmt.Errorf("Expected to error on attempted read; got value %v", objValue)
-		} else {
-			return nil, nil
-		}
+		return nil, obj3.Set([]byte{}, obj3Refs[0], obj1.GrantCapability(client.Read))
 	})
 	if err != nil {
 		th.Fatal(err)
 	}
-
-	// now read root and obj3
-	result, _, err := c2.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		root, err := c2.GetRootObject(txn)
+	// txn3: add the write pointer from obj2 to obj1
+	_, _, err = c1.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+		root, err := c1.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
-		refs, err := root.References()
+		rootRefs, err := root.References()
 		if err != nil {
 			return nil, err
 		}
-		if len(refs) != 2 {
-			return nil, fmt.Errorf("Expected root to have 2 reference; got %v", len(refs))
-		}
-		obj3 := refs[0]
-		_, err = obj3.References()
-		if err != nil {
-			return nil, err
-		}
-		obj1 := refs[1]
-		if objCap := obj1.Capability(); objCap != client.None {
-			return nil, fmt.Errorf("Expected None capability; got %v", objCap)
-		}
-		return obj1.Value()
-	})
-	// despite the None, we should have been able to read it because of
-	// the existance of the reference from obj3 to obj1, even though we
-	// went via the reference from root.
-	if bites, ok := result.([]byte); !ok || !bytes.Equal(bites, []byte("Hello World")) {
-		th.Fatalf("Expected to read value Hello World but read %v", bites)
-	}
-	// ...but we still shouldn't be able to write it
-	_, _, err = c2.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		root, err := c2.GetRootObject(txn)
-		if err != nil {
-			return nil, err
-		}
-		refs, err := root.References()
-		if err != nil {
-			return nil, err
-		}
-		if len(refs) != 2 {
-			return nil, fmt.Errorf("Expected root to have 2 reference; got %v", len(refs))
-		}
-		obj1 := refs[1]
-		if objCap := obj1.Capability(); objCap != client.None {
-			return nil, fmt.Errorf("Expected None capability; got %v", objCap)
-		}
-		err = obj1.Set([]byte("illegal"))
-		if err == nil {
-			return nil, fmt.Errorf("Expected to error on attempted write")
-		} else {
-			return nil, nil
-		}
-	})
-	if err != nil {
-		th.Fatal(err)
-	}
-
-	// finally, if we read root and obj3 and obj2 then we should be able to read and write obj1
-	result, _, err = c2.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		root, err := c2.GetRootObject(txn)
-		if err != nil {
-			return nil, err
-		}
-		refs, err := root.References()
-		if err != nil {
-			return nil, err
-		}
-		if len(refs) != 2 {
-			return nil, fmt.Errorf("Expected root to have 2 reference; got %v", len(refs))
-		}
-		obj3 := refs[0]
+		obj3 := rootRefs[0]
+		obj1 := rootRefs[1]
 		obj3Refs, err := obj3.References()
 		if err != nil {
 			return nil, err
 		}
 		obj2 := obj3Refs[0]
-		obj2Refs, err := obj2.References()
-		if err != nil {
-			return nil, err
-		}
-		th.Log(obj2Refs)
-		obj1 := refs[1]
-		if objCap := obj1.Capability(); objCap != client.None {
-			return nil, fmt.Errorf("Expected None capability; got %v", objCap)
-		}
-		return obj1.Value()
+		return nil, obj2.Set([]byte{}, obj1.GrantCapability(client.Write))
 	})
-	if bites, ok := result.([]byte); !ok || !bytes.Equal(bites, []byte("Hello World")) {
-		th.Fatalf("Expected to read value Hello World but read %v", bites)
+	if err != nil {
+		th.Fatal(err)
 	}
-	// ...and now, we should be able to write it
+	// initially, c2 should not be able to read obj1
+	attemptRead(c2, 2, 1, client.None, client.None, nil)
+	// but, if c2 first reads obj3, it should find it can read obj1
+	attemptRead(c2, 2, 0, client.ReadWrite, client.ReadWrite, []byte{})
+	attemptRead(c2, 2, 1, client.None, client.Read, []byte("Hello World"))
+	// finally, if c2 reads to obj2 then we should discover we can actually write obj1
 	_, _, err = c2.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		root, err := c2.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
-		refs, err := root.References()
+		rootRefs, err := root.References()
 		if err != nil {
 			return nil, err
 		}
-		if len(refs) != 2 {
-			return nil, fmt.Errorf("Expected root to have 2 reference; got %v", len(refs))
+		obj3 := rootRefs[0]
+		obj3Refs, err := obj3.References()
+		if err != nil {
+			return nil, err
 		}
-		obj1 := refs[1]
-		if objCap := obj1.Capability(); objCap != client.None {
-			return nil, fmt.Errorf("Expected None capability; got %v", objCap)
-		}
-		return nil, obj1.Set([]byte("Goodbye World"))
+		obj2 := obj3Refs[0]
+		return obj2.Value()
 	})
 	if err != nil {
 		th.Fatal(err)
 	}
+	attemptWrite(c2, 2, 1, client.None, client.ReadWrite, []byte("Goodbye World"))
+	attemptRead(c1, 2, 1, client.None, client.ReadWrite, []byte("Goodbye World"))
 }
