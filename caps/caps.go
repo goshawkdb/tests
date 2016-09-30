@@ -77,7 +77,7 @@ func attemptWrite(c *tests.Connection, refsLen, refsIdx int, refCap, objCap clie
 			return nil, err
 		}
 		if len(refs) != refsLen {
-			return nil, fmt.Errorf("Expected root to have 1 reference; got %v", len(refs))
+			return nil, fmt.Errorf("Expected root to have %v reference(s); got %v", refsLen, len(refs))
 		}
 		obj := refs[refsIdx]
 		if cap := obj.RefCapability(); cap != refCap {
