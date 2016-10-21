@@ -44,7 +44,7 @@ func (s *Setup) cloneLogger(l *log.Logger, prefixExt string) *log.Logger {
 func (s *Setup) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|Setup", parentPrefix))
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, s))
 	dir, err := ioutil.TempDir(os.TempDir(), "GoshawkDBHarness")
 	if err != nil {
 		l.Printf("Error encountered: %v", err)
@@ -56,7 +56,7 @@ func (s *Setup) Exec(l *log.Logger) error {
 }
 
 func (s *Setup) String() string {
-	return fmt.Sprintf("Setup in: %v", s.dir)
+	return "Setup"
 }
 
 // Command
@@ -94,7 +94,7 @@ func (cmd *Command) Start() *CommandStart {
 func (cmd *CommandStart) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|CommandStart", parentPrefix))
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cmd))
 	return cmd.start(l)
 }
 
@@ -169,7 +169,7 @@ func (cmd *CommandStart) reader(reader io.ReadCloser, l *log.Logger) {
 }
 
 func (cmd *CommandStart) String() string {
-	return fmt.Sprintf("Command :%v", cmd.exePath)
+	return "CommandStart"
 }
 
 // CommandSignal
@@ -189,7 +189,7 @@ func (cmd *Command) Signal(sig os.Signal) Instruction {
 func (cmds *commandSignal) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|Signal", parentPrefix))
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cmds))
 	l.Printf("Sending signal %v...", cmds.sig)
 	if err := cmds.cmd.Process.Signal(cmds.sig); err != nil {
 		l.Printf("Error encountered: %v", err)
@@ -200,7 +200,7 @@ func (cmds *commandSignal) Exec(l *log.Logger) error {
 }
 
 func (cmds *commandSignal) String() string {
-	return fmt.Sprintf("Send signal: %v", cmds.sig)
+	return "Signal"
 }
 
 func (cmd *Command) Terminate() Instruction {
@@ -222,7 +222,7 @@ func (cmd *Command) Wait() Instruction {
 func (cmdw *commandWait) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|Wait", parentPrefix))
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cmdw))
 	l.Print("Waiting for process end...")
 	if err := cmdw.cmd.Wait(); err != nil {
 		l.Printf("Error encountered: %v", err)
@@ -274,7 +274,7 @@ type rmStart RM
 func (rms *rmStart) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|RMStart", parentPrefix))
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, rms))
 
 	if len(rms.Command.cwd) == 0 {
 		dir, err := ioutil.TempDir(rms.dir, rms.name)
@@ -313,7 +313,7 @@ func (s *sleep) Exec(l *log.Logger) error {
 	}
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|Sleep", parentPrefix))
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, s))
 	l.Printf("Sleeping for %v...", d)
 	time.Sleep(d)
 	l.Printf("Sleeping for %v...done", d)
@@ -337,11 +337,7 @@ func (s *Setup) SleepRandom(min, max time.Duration) Instruction {
 }
 
 func (s sleep) String() string {
-	if s.min >= s.max {
-		return fmt.Sprintf("Sleep: %v", s.min)
-	} else {
-		return fmt.Sprintf("Sleep: %v-%v", s.min, s.max)
-	}
+	return "Sleep"
 }
 
 // absorbing errors
@@ -357,14 +353,14 @@ func (s *Setup) AbsorbError(instr Instruction) Instruction {
 func (ae absorbError) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|AbsorbError(%v)", parentPrefix, ae.wrapped))
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, ae))
 	err := ae.wrapped.Exec(l)
 	l.Printf("Absorbed: %v", err)
 	return nil
 }
 
 func (ae absorbError) String() string {
-	return fmt.Sprintf("AbsorbError: %v", ae.wrapped)
+	return "AbsorbError"
 }
 
 // programs
@@ -375,7 +371,7 @@ func (p Program) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
 	for idx, instr := range p {
-		l.SetPrefix(fmt.Sprintf("%s|Program(%d:%v)", parentPrefix, idx, instr))
+		l.SetPrefix(fmt.Sprintf("%s|Program(%d)", parentPrefix, idx))
 		if err := instr.Exec(l); err != nil {
 			l.Printf("Error encountered: %v", err)
 			return err
@@ -385,7 +381,7 @@ func (p Program) Exec(l *log.Logger) error {
 }
 
 func (p Program) String() string {
-	return fmt.Sprintf("%v", ([]Instruction)(p))
+	return fmt.Sprintf("Program %v", len(p))
 }
 
 // inParallel. This waits for the end of all of them
@@ -408,7 +404,7 @@ func (ip *inParallel) Exec(l *log.Logger) error {
 	errChan := make(chan error, len(ip.instrs))
 	for idx, instr := range ip.instrs {
 		instrCopy := instr
-		loggerClone := ip.cloneLogger(l, fmt.Sprintf("InParallel(%d:%v)", idx, instrCopy))
+		loggerClone := ip.cloneLogger(l, fmt.Sprintf("InParallel(%d)", idx))
 		go func() {
 			defer wg.Done()
 			if err := instrCopy.Exec(loggerClone); err != nil {
@@ -431,7 +427,7 @@ func (ip *inParallel) Exec(l *log.Logger) error {
 }
 
 func (ip *inParallel) String() string {
-	return fmt.Sprintf("InParallel: %v", Program(ip.instrs))
+	return fmt.Sprintf("InParallel %v", len(ip.instrs))
 }
 
 // untilError
@@ -450,7 +446,7 @@ func (ue *untilError) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
 	for idx := 0; true; idx++ {
-		l.SetPrefix(fmt.Sprintf("%s|UntilError(%d:%v)", parentPrefix, idx, ue.wrapped))
+		l.SetPrefix(fmt.Sprintf("%s|%v(%d)", parentPrefix, ue, idx))
 		if err := ue.wrapped.Exec(l); err != nil {
 			l.Printf("Error encountered: %v", err)
 			return err
@@ -460,7 +456,7 @@ func (ue *untilError) Exec(l *log.Logger) error {
 }
 
 func (ue *untilError) String() string {
-	return fmt.Sprintf("UntilError: %v", ue.wrapped)
+	return "UntilError"
 }
 
 // pickOne
@@ -482,7 +478,7 @@ func (po *pickOne) Exec(l *log.Logger) error {
 	defer l.SetPrefix(parentPrefix)
 	picked := po.rng.Intn(len(po.instrs))
 	instr := po.instrs[picked]
-	l.SetPrefix(fmt.Sprintf("%s|PickOne(%d:%v)", parentPrefix, picked, instr))
+	l.SetPrefix(fmt.Sprintf("%s|%v(%d)", parentPrefix, po, picked))
 	if err := instr.Exec(l); err != nil {
 		l.Printf("Error encountered: %v", err)
 		return err
@@ -491,7 +487,7 @@ func (po *pickOne) Exec(l *log.Logger) error {
 }
 
 func (po *pickOne) String() string {
-	return fmt.Sprintf("PickOne: %v", Program(po.instrs))
+	return fmt.Sprintf("PickOne %v", len(po.instrs))
 }
 
 type logMsg string
@@ -503,7 +499,7 @@ func (s *Setup) Log(msg string) Instruction {
 func (s logMsg) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|Log", parentPrefix))
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, s))
 	l.Print(string(s))
 	return nil
 }
