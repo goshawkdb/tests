@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -19,18 +20,61 @@ type Instruction interface {
 }
 
 type Setup struct {
-	gosBin    string
 	rng       *rand.Rand
 	logOutput io.Writer
+	gosBin    string
+	gosConfig string
+	gosCert   string
 	dir       string
+	env       []string
 }
 
-func NewSetup(pathToGoshawkDBbinary string) *Setup {
+func NewSetup() *Setup {
 	return &Setup{
-		gosBin:    pathToGoshawkDBbinary,
 		rng:       rand.New(rand.NewSource(time.Now().UnixNano())),
 		logOutput: os.Stdout,
 	}
+}
+
+func (s *Setup) SetGoshawkDBBinary(path string) error {
+	if len(path) > 0 {
+		path, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		s.gosBin = path
+	}
+	return nil
+}
+
+func (s *Setup) SetGoshawkDBConfigFile(path string) error {
+	if len(path) > 0 {
+		path, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		s.gosConfig = path
+	}
+	return nil
+}
+
+func (s *Setup) SetGoshawkDBCertFile(path string) error {
+	if len(path) > 0 {
+		path, err := filepath.Abs(path)
+		if err != nil {
+			return err
+		}
+		s.gosCert = path
+	}
+	return nil
+}
+
+func (s *Setup) SetEnv(envMap map[string]string) {
+	env := make([]string, 0, len(envMap))
+	for k, v := range envMap {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+	s.env = env
 }
 
 func (s *Setup) NewLogger() *log.Logger {
@@ -246,7 +290,7 @@ func (cmdw *commandWait) String() string {
 func (s *Setup) NewRM(name string, port uint16, certPath, configPath string) *RM {
 	return &RM{
 		Setup:      s,
-		Command:    s.NewCmd(s.gosBin, nil, "", []string{}),
+		Command:    s.NewCmd("", nil, "", nil),
 		name:       name,
 		port:       port,
 		certPath:   certPath,
@@ -282,7 +326,15 @@ func (rms *rmStart) Exec(l *log.Logger) error {
 			l.Printf("Error encountered: %v", err)
 			return err
 		}
+		rms.exePath = rms.gosBin
+		rms.Command.env = rms.Setup.env
 		rms.cwd = dir
+		if len(rms.certPath) == 0 {
+			rms.certPath = rms.gosCert
+		}
+		if len(rms.configPath) == 0 {
+			rms.configPath = rms.gosConfig
+		}
 
 		rms.args = []string{
 			"-dir", dir,

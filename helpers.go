@@ -58,9 +58,9 @@ type TestInterface interface {
 type TestHelper struct {
 	TestInterface
 	connections   []*Connection
-	clusterHosts  []string
-	clusterCert   []byte
-	clientKeyPair []byte
+	ClusterHosts  []string
+	ClusterCert   []byte
+	ClientKeyPair []byte
 	RootName      string
 }
 
@@ -111,9 +111,9 @@ func NewTestHelper(t TestInterface) *TestHelper {
 	}
 	return &TestHelper{
 		TestInterface: t,
-		clusterHosts:  clusterHosts,
-		clusterCert:   clusterCert,
-		clientKeyPair: clientKeyPair,
+		ClusterHosts:  clusterHosts,
+		ClusterCert:   clusterCert,
+		ClientKeyPair: clientKeyPair,
 		RootName:      rootName,
 	}
 }
@@ -128,8 +128,8 @@ func (th *TestHelper) MaybeFatal(err error) error {
 func (th *TestHelper) CreateConnections(num int) []*Connection {
 	results := make([]*Connection, num)
 	for i := 0; i < num; i++ {
-		host := th.clusterHosts[i%len(th.clusterHosts)]
-		conn, err := client.NewConnection(host, th.clientKeyPair, th.clusterCert)
+		host := th.ClusterHosts[i%len(th.ClusterHosts)]
+		conn, err := client.NewConnection(host, th.ClientKeyPair, th.ClusterCert)
 		if err != nil {
 			th.Fatal(err)
 		}
