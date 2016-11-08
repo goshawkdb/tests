@@ -30,6 +30,12 @@ func main() {
 		nil,
 	)
 
+	stoppable := setup.UntilStopped(h.Program([]h.Instruction{
+		collectionSoak.Start(),
+		setup.AbsorbError(collectionSoak.Wait()),
+		setup.Sleep(5 * time.Second),
+	}))
+
 	prog := h.Program([]h.Instruction{
 		setup,
 		setup.InParallel(rm1.Start(), rm2.Start(), rm3.Start()),
@@ -38,11 +44,7 @@ func main() {
 
 		setup.InParallel(
 
-			setup.UntilError(h.Program([]h.Instruction{
-				collectionSoak.Start(),
-				setup.AbsorbError(collectionSoak.Wait()),
-				setup.Sleep(5 * time.Second),
-			})),
+			stoppable,
 
 			h.Program([]h.Instruction{
 				setup.UntilError(h.Program([]h.Instruction{
@@ -58,6 +60,11 @@ func main() {
 					rm2.Start(),
 				})),
 				setup.Log("Servers have errored!"),
+			}),
+
+			h.Program([]h.Instruction{
+				setup.Sleep(20 * time.Minute),
+				stoppable.Stop(),
 			}),
 		),
 	})

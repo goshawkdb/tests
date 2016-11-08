@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -578,6 +579,56 @@ func (s LogMsg) Exec(l *log.Logger) error {
 
 func (s LogMsg) String() string {
 	return "Log"
+}
+
+// UntilStopped (also stops on error)
+
+type UntilStopped struct {
+	wrapped Instruction
+	stopped uint32
+}
+
+func (s *Setup) UntilStopped(instr Instruction) *UntilStopped {
+	us := &UntilStopped{
+		wrapped: instr,
+		stopped: 0,
+	}
+	return us
+}
+
+func (us *UntilStopped) Exec(l *log.Logger) error {
+	parentPrefix := l.Prefix()
+	defer l.SetPrefix(parentPrefix)
+	for idx := 0; 0 == atomic.LoadUint32(&us.stopped); idx++ {
+		l.SetPrefix(fmt.Sprintf("%s|%v(%d)", parentPrefix, us, idx))
+		if err := us.wrapped.Exec(l); err != nil {
+			l.Printf("Error encountered: %v", err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (us *UntilStopped) Stop() *UntilStoppedStop {
+	return (*UntilStoppedStop)(us)
+}
+
+func (us *UntilStopped) String() string {
+	return "UntilStopped"
+}
+
+type UntilStoppedStop UntilStopped
+
+func (uss *UntilStoppedStop) Exec(l *log.Logger) error {
+	parentPrefix := l.Prefix()
+	defer l.SetPrefix(parentPrefix)
+	l.SetPrefix(fmt.Sprintf("%s|%v Stopping", parentPrefix, uss))
+	atomic.StoreUint32(&uss.stopped, 1)
+	return nil
+}
+
+func (uss *UntilStoppedStop) String() string {
+	return "UntilStoppedStop"
 }
 
 // errors
