@@ -584,14 +584,16 @@ func (s LogMsg) String() string {
 // UntilStopped (also stops on error)
 
 type UntilStopped struct {
-	wrapped Instruction
-	stopped uint32
+	wrapped  Instruction
+	stopped  uint32
+	finished chan struct{}
 }
 
 func (s *Setup) UntilStopped(instr Instruction) *UntilStopped {
 	us := &UntilStopped{
-		wrapped: instr,
-		stopped: 0,
+		wrapped:  instr,
+		stopped:  0,
+		finished: make(chan struct{}),
 	}
 	return us
 }
@@ -606,6 +608,7 @@ func (us *UntilStopped) Exec(l *log.Logger) error {
 			return err
 		}
 	}
+	close(us.finished)
 	return nil
 }
 
@@ -624,6 +627,7 @@ func (uss *UntilStoppedStop) Exec(l *log.Logger) error {
 	defer l.SetPrefix(parentPrefix)
 	l.SetPrefix(fmt.Sprintf("%s|%v Stopping", parentPrefix, uss))
 	atomic.StoreUint32(&uss.stopped, 1)
+	<-uss.finished
 	return nil
 }
 

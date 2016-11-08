@@ -3,7 +3,7 @@ package main
 import (
 	h "goshawkdb.io/tests/harness"
 	"log"
-	//	"syscall"
+	"syscall"
 	"time"
 )
 
@@ -30,10 +30,23 @@ func main() {
 		nil,
 	)
 
-	stoppable := setup.UntilStopped(h.Program([]h.Instruction{
+	stoppableTest := setup.UntilStopped(h.Program([]h.Instruction{
 		collectionSoak.Start(),
 		setup.AbsorbError(collectionSoak.Wait()),
 		setup.Sleep(5 * time.Second),
+	}))
+
+	stoppableServers := setup.UntilStopped(h.Program([]h.Instruction{
+		setup.SleepRandom(5*time.Second, 10*time.Second),
+		rm2.Terminate(),
+		setup.SleepRandom(1*time.Second, 5*time.Second),
+		rm3.Terminate(),
+		rm2.Wait(),
+		rm3.Wait(),
+		setup.SleepRandom(1*time.Second, 5*time.Second),
+		rm3.Start(),
+		setup.SleepRandom(1*time.Second, 5*time.Second),
+		rm2.Start(),
 	}))
 
 	prog := h.Program([]h.Instruction{
@@ -44,27 +57,18 @@ func main() {
 
 		setup.InParallel(
 
-			stoppable,
+			stoppableTest,
+			stoppableServers,
 
 			h.Program([]h.Instruction{
-				setup.UntilError(h.Program([]h.Instruction{
-					setup.SleepRandom(5*time.Second, 10*time.Second),
-					rm2.Terminate(),
-					setup.SleepRandom(1*time.Second, 5*time.Second),
-					rm3.Terminate(),
-					rm2.Wait(),
-					rm3.Wait(),
-					setup.SleepRandom(1*time.Second, 5*time.Second),
-					rm3.Start(),
-					setup.SleepRandom(1*time.Second, 5*time.Second),
-					rm2.Start(),
-				})),
-				setup.Log("Servers have errored!"),
-			}),
-
-			h.Program([]h.Instruction{
-				setup.Sleep(20 * time.Minute),
-				stoppable.Stop(),
+				setup.Sleep(2 * time.Minute),
+				stoppableTest.Stop(),
+				stoppableServers.Stop(), // will leave all 3 running
+				setup.Sleep(30 * time.Second),
+				rm1.Signal(syscall.SIGUSR1),
+				rm2.Signal(syscall.SIGUSR1),
+				rm3.Signal(syscall.SIGUSR1),
+				setup.Sleep(30 * time.Second),
 			}),
 		),
 	})
