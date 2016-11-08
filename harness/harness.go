@@ -2,6 +2,7 @@ package harness
 
 import (
 	"flag"
+	"fmt"
 	"os"
 )
 
@@ -22,37 +23,40 @@ func Run(setup *Setup, prog Instruction) error {
 	flag.Parse()
 
 	if len(binaryPath) > 0 {
-		if err := setup.SetGoshawkDBBinary(binaryPath); err != nil {
+		if err := setup.GosBin.SetPath(binaryPath, true); err != nil {
 			return err
 		}
+		fmt.Println(setup.GosBin.Path())
 		delete(envMap, "GOSHAWKDB_BINARY")
 	} else if path, found := envMap["GOSHAWKDB_BINARY"]; found {
-		if err := setup.SetGoshawkDBBinary(path); err != nil {
+		if err := setup.GosBin.SetPath(path, true); err != nil {
 			return err
 		}
 	}
 
 	if len(certPath) > 0 {
-		if err := setup.SetGoshawkDBCertFile(certPath); err != nil {
+		if err := setup.GosCert.SetPath(certPath, false); err != nil {
 			return err
 		}
 		delete(envMap, "GOSHAWKDB_CLUSTER_CERT")
 	} else if path, found := envMap["GOSHAWKDB_CLUSTER_CERT"]; found {
-		if err := setup.SetGoshawkDBCertFile(path); err != nil {
+		if err := setup.GosCert.SetPath(path, false); err != nil {
 			return err
 		}
 	}
 
 	if len(configPath) > 0 {
-		if err := setup.SetGoshawkDBConfigFile(configPath); err != nil {
+		if err := setup.GosConfig.SetPath(configPath, false); err != nil {
 			return err
 		}
 		delete(envMap, "GOSHAWKDB_CLUSTER_CONFIG")
 	} else if path, found := envMap["GOSHAWKDB_CLUSTER_CONFIG"]; found {
-		if err := setup.SetGoshawkDBConfigFile(path); err != nil {
+		if err := setup.GosConfig.SetPath(path, false); err != nil {
 			return err
 		}
 	}
+
+	setup.SetEnv(envMap)
 
 	l := setup.NewLogger()
 	return prog.Exec(l)

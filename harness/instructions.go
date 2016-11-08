@@ -2,6 +2,7 @@ package harness
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -22,10 +23,10 @@ type Instruction interface {
 type Setup struct {
 	rng       *rand.Rand
 	logOutput io.Writer
-	gosBin    string
-	gosConfig string
-	gosCert   string
-	dir       string
+	GosBin    *PathProvider
+	GosConfig *PathProvider
+	GosCert   *PathProvider
+	Dir       *PathProvider
 	env       []string
 }
 
@@ -33,40 +34,11 @@ func NewSetup() *Setup {
 	return &Setup{
 		rng:       rand.New(rand.NewSource(time.Now().UnixNano())),
 		logOutput: os.Stdout,
+		GosBin:    &PathProvider{},
+		GosConfig: &PathProvider{},
+		GosCert:   &PathProvider{},
+		Dir:       &PathProvider{},
 	}
-}
-
-func (s *Setup) SetGoshawkDBBinary(path string) error {
-	if len(path) > 0 {
-		path, err := filepath.Abs(path)
-		if err != nil {
-			return err
-		}
-		s.gosBin = path
-	}
-	return nil
-}
-
-func (s *Setup) SetGoshawkDBConfigFile(path string) error {
-	if len(path) > 0 {
-		path, err := filepath.Abs(path)
-		if err != nil {
-			return err
-		}
-		s.gosConfig = path
-	}
-	return nil
-}
-
-func (s *Setup) SetGoshawkDBCertFile(path string) error {
-	if len(path) > 0 {
-		path, err := filepath.Abs(path)
-		if err != nil {
-			return err
-		}
-		s.gosCert = path
-	}
-	return nil
 }
 
 func (s *Setup) SetEnv(envMap map[string]string) {
@@ -89,42 +61,90 @@ func (s *Setup) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
 	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, s))
-	dir, err := ioutil.TempDir(os.TempDir(), "GoshawkDBHarness")
-	if err != nil {
-		l.Printf("Error encountered: %v", err)
-		return err
+
+	if len(s.Dir.Path()) == 0 {
+		dir, err := ioutil.TempDir(os.TempDir(), "GoshawkDBHarness")
+		if err != nil {
+			l.Printf("Error encountered: %v", err)
+			return err
+		}
+		l.Printf("Created dir in %s", dir)
+		return s.Dir.SetPath(dir, false)
+	} else {
+		return s.Dir.EnsureDir()
 	}
-	l.Printf("Created dir in %s", dir)
-	s.dir = dir
-	return nil
 }
 
 func (s *Setup) String() string {
 	return "Setup"
 }
 
-// Command
+// path provider
 
-func (s *Setup) NewCmd(exePath string, args []string, cwd string, env []string) *Command {
-	return &Command{
-		Setup:   s,
-		exePath: exePath,
-		args:    args,
-		cwd:     cwd,
-		env:     env,
+type PathProvider struct {
+	p string
+}
+
+func NewPathProvider(p string, isCmd bool) (*PathProvider, error) {
+	pp := &PathProvider{}
+	if err := pp.SetPath(p, isCmd); err == nil {
+		return pp, nil
+	} else {
+		return nil, err
 	}
 }
 
+func (pp *PathProvider) SetPath(p string, isCmd bool) (err error) {
+	if len(p) > 0 {
+		if isCmd {
+			p, err = exec.LookPath(p)
+			if err != nil {
+				return
+			}
+		}
+
+		p, err = filepath.Abs(p)
+		if err != nil {
+			return
+		}
+	}
+	pp.p = p
+	return
+}
+
+func (pp *PathProvider) Path() string {
+	return pp.p
+}
+
+func (pp *PathProvider) EnsureDir() error {
+	if len(pp.p) == 0 {
+		return errors.New("Cannot create dir of empty path")
+	}
+	return os.MkdirAll(pp.p, 0750)
+}
+
+// Command
+
 type Command struct {
-	*Setup
-	exePath   string
+	setup     *Setup
+	exePath   *PathProvider
 	args      []string
-	cwd       string
+	cwd       *PathProvider
 	env       []string
 	cmd       *exec.Cmd
 	stdout    io.ReadCloser
 	stderr    io.ReadCloser
 	readersWG *sync.WaitGroup
+}
+
+func (s *Setup) NewCmd(exePath *PathProvider, args []string, cwd *PathProvider, env []string) *Command {
+	return &Command{
+		setup:   s,
+		exePath: exePath,
+		args:    args,
+		cwd:     cwd,
+		env:     env,
+	}
 }
 
 // CommandStart. Does not block to wait for end of cmd
@@ -143,43 +163,39 @@ func (cmd *CommandStart) Exec(l *log.Logger) error {
 }
 
 func (cmd *CommandStart) start(l *log.Logger) error {
-	eCmd := exec.Command(cmd.exePath, cmd.args...)
+	eCmd := exec.Command(cmd.exePath.Path(), cmd.args...)
 	eCmd.Env = cmd.env
-	eCmd.Dir = cmd.cwd
+	if err := cmd.cwd.EnsureDir(); err != nil {
+		return err
+	}
+	eCmd.Dir = cmd.cwd.Path()
+
+	killFun := func(err error) error {
+		if err == nil {
+			return nil
+		} else {
+			l.Printf("Error encountered: %v", err)
+			var errkill error
+			if errkill = eCmd.Process.Kill(); errkill == nil {
+				errkill = eCmd.Wait()
+			}
+			if errkill != nil {
+				l.Printf("Supplementary error encountered when killing: %v", errkill)
+			}
+			return err
+		}
+	}
 
 	stdout, err := eCmd.StdoutPipe()
-	var errkill error
-	if err != nil {
-		l.Printf("Error encountered: %v", err)
-		if errkill = eCmd.Process.Kill(); errkill == nil {
-			errkill = eCmd.Wait()
-		}
-		if errkill != nil {
-			l.Printf("Supplementary error encountered when killing: %v", errkill)
-		}
+	if err = killFun(err); err != nil {
 		return err
 	}
 	stderr, err := eCmd.StderrPipe()
-	if err != nil {
-		l.Printf("Error encountered: %v", err)
-		if errkill = eCmd.Process.Kill(); errkill == nil {
-			errkill = eCmd.Wait()
-		}
-		if errkill != nil {
-			l.Printf("Supplementary error encountered when killing: %v", errkill)
-		}
+	if err = killFun(err); err != nil {
 		return err
 	}
-
 	err = eCmd.Start()
-	if err != nil {
-		l.Printf("Error encountered: %v", err)
-		if errkill = eCmd.Process.Kill(); errkill == nil {
-			errkill = eCmd.Wait()
-		}
-		if errkill != nil {
-			l.Printf("Supplementary error encountered when killing: %v", errkill)
-		}
+	if err = killFun(err); err != nil {
 		return err
 	}
 
@@ -188,8 +204,8 @@ func (cmd *CommandStart) start(l *log.Logger) error {
 	cmd.stderr = stderr
 	cmd.readersWG = new(sync.WaitGroup)
 	cmd.readersWG.Add(2)
-	go cmd.reader(stdout, cmd.cloneLogger(l, "StdOut"))
-	go cmd.reader(stderr, cmd.cloneLogger(l, "StdErr"))
+	go cmd.reader(stdout, cmd.setup.cloneLogger(l, "StdOut"))
+	go cmd.reader(stderr, cmd.setup.cloneLogger(l, "StdErr"))
 
 	return nil
 }
@@ -218,19 +234,19 @@ func (cmd *CommandStart) String() string {
 
 // CommandSignal
 
-type commandSignal struct {
+type CommandSignal struct {
 	*Command
 	sig os.Signal
 }
 
-func (cmd *Command) Signal(sig os.Signal) Instruction {
-	return &commandSignal{
+func (cmd *Command) Signal(sig os.Signal) *CommandSignal {
+	return &CommandSignal{
 		Command: cmd,
 		sig:     sig,
 	}
 }
 
-func (cmds *commandSignal) Exec(l *log.Logger) error {
+func (cmds *CommandSignal) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
 	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cmds))
@@ -243,27 +259,27 @@ func (cmds *commandSignal) Exec(l *log.Logger) error {
 	return nil
 }
 
-func (cmds *commandSignal) String() string {
+func (cmds *CommandSignal) String() string {
 	return "Signal"
 }
 
-func (cmd *Command) Terminate() Instruction {
+func (cmd *Command) Terminate() *CommandSignal {
 	return cmd.Signal(syscall.SIGTERM)
 }
 
-func (cmd *Command) Kill() Instruction {
+func (cmd *Command) Kill() *CommandSignal {
 	return cmd.Signal(syscall.SIGKILL)
 }
 
 // CommandWait
 
-type commandWait Command
+type CommandWait Command
 
-func (cmd *Command) Wait() Instruction {
-	return (*commandWait)(cmd)
+func (cmd *Command) Wait() *CommandWait {
+	return (*CommandWait)(cmd)
 }
 
-func (cmdw *commandWait) Exec(l *log.Logger) error {
+func (cmdw *CommandWait) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
 	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cmdw))
@@ -281,16 +297,31 @@ func (cmdw *commandWait) Exec(l *log.Logger) error {
 	return nil
 }
 
-func (cmdw *commandWait) String() string {
+func (cmdw *CommandWait) String() string {
 	return "Wait"
 }
 
 // RM
 
-func (s *Setup) NewRM(name string, port uint16, certPath, configPath string) *RM {
+type RM struct {
+	setup *Setup
+	*Command
+	name       string
+	port       uint16
+	certPath   *PathProvider
+	configPath *PathProvider
+}
+
+func (s *Setup) NewRM(name string, port uint16, certPath, configPath *PathProvider) *RM {
+	if certPath == nil {
+		certPath = s.GosCert
+	}
+	if configPath == nil {
+		configPath = s.GosConfig
+	}
 	return &RM{
-		Setup:      s,
-		Command:    s.NewCmd("", nil, "", nil),
+		setup:      s,
+		Command:    s.NewCmd(s.GosBin, nil, &PathProvider{}, nil),
 		name:       name,
 		port:       port,
 		certPath:   certPath,
@@ -298,70 +329,75 @@ func (s *Setup) NewRM(name string, port uint16, certPath, configPath string) *RM
 	}
 }
 
-type RM struct {
-	*Setup
-	*Command
-	name       string
-	port       uint16
-	certPath   string
-	configPath string
+func (rm *RM) Start() *RMStart {
+	return (*RMStart)(rm)
 }
 
-func (rm *RM) Start() Instruction {
-	return (*rmStart)(rm)
-}
+// RMStart
 
-// rmStart
+type RMStart RM
 
-type rmStart RM
-
-func (rms *rmStart) Exec(l *log.Logger) error {
+func (rms *RMStart) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
 	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, rms))
 
-	if len(rms.Command.cwd) == 0 {
-		dir, err := ioutil.TempDir(rms.dir, rms.name)
+	if rms.Command.args == nil {
+		dirPP := rms.Command.cwd
+		err := dirPP.SetPath(filepath.Join(rms.setup.Dir.Path(), rms.name), false)
 		if err != nil {
 			l.Printf("Error encountered: %v", err)
 			return err
 		}
-		rms.exePath = rms.gosBin
-		rms.Command.env = rms.Setup.env
-		rms.cwd = dir
-		if len(rms.certPath) == 0 {
-			rms.certPath = rms.gosCert
-		}
-		if len(rms.configPath) == 0 {
-			rms.configPath = rms.gosConfig
+		if err = dirPP.EnsureDir(); err != nil {
+			l.Printf("Error encountered: %v", err)
+			return err
 		}
 
-		rms.args = []string{
-			"-dir", dir,
+		rms.Command.args = []string{
+			"-dir", dirPP.Path(),
 			"-port", fmt.Sprintf("%d", rms.port),
-			"-cert", rms.certPath,
-			"-config", rms.configPath,
+			"-cert", rms.certPath.Path(),
+			"-config", rms.configPath.Path(),
 		}
+
+		rms.Command.env = rms.setup.env
 	}
 
 	return rms.Command.Start().start(l)
 }
 
-func (rms *rmStart) String() string {
+func (rms *RMStart) String() string {
 	return fmt.Sprintf("RMStart:%v", rms.name)
 }
 
 // sleepy
 
-type sleep struct {
-	*Setup
+type Sleep struct {
+	setup    *Setup
 	min, max time.Duration
 }
 
-func (s *sleep) Exec(l *log.Logger) error {
+func (s *Setup) Sleep(d time.Duration) *Sleep {
+	return &Sleep{
+		setup: s,
+		min:   d,
+		max:   d,
+	}
+}
+
+func (s *Setup) SleepRandom(min, max time.Duration) *Sleep {
+	return &Sleep{
+		setup: s,
+		min:   min,
+		max:   max,
+	}
+}
+
+func (s *Sleep) Exec(l *log.Logger) error {
 	d := s.min
 	if diff := s.max - s.min; diff > 0 {
-		d = s.min + time.Duration(s.rng.Int63n(int64(diff)))
+		d = s.min + time.Duration(s.setup.rng.Int63n(int64(diff)))
 	}
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
@@ -372,37 +408,21 @@ func (s *sleep) Exec(l *log.Logger) error {
 	return nil
 }
 
-func (s *Setup) Sleep(d time.Duration) Instruction {
-	return &sleep{
-		Setup: s,
-		min:   d,
-		max:   d,
-	}
-}
-
-func (s *Setup) SleepRandom(min, max time.Duration) Instruction {
-	return &sleep{
-		Setup: s,
-		min:   min,
-		max:   max,
-	}
-}
-
-func (s sleep) String() string {
+func (s Sleep) String() string {
 	return "Sleep"
 }
 
 // absorbing errors
 
-type absorbError struct {
+type AbsorbError struct {
 	wrapped Instruction
 }
 
-func (s *Setup) AbsorbError(instr Instruction) Instruction {
-	return &absorbError{wrapped: instr}
+func (s *Setup) AbsorbError(instr Instruction) *AbsorbError {
+	return &AbsorbError{wrapped: instr}
 }
 
-func (ae absorbError) Exec(l *log.Logger) error {
+func (ae AbsorbError) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
 	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, ae))
@@ -411,7 +431,7 @@ func (ae absorbError) Exec(l *log.Logger) error {
 	return nil
 }
 
-func (ae absorbError) String() string {
+func (ae AbsorbError) String() string {
 	return "AbsorbError"
 }
 
@@ -436,27 +456,27 @@ func (p Program) String() string {
 	return fmt.Sprintf("Program %v", len(p))
 }
 
-// inParallel. This waits for the end of all of them
+// InParallel. This waits for the end of all of them
 
-type inParallel struct {
-	*Setup
+type InParallel struct {
+	setup  *Setup
 	instrs []Instruction
 }
 
-func (s *Setup) InParallel(instrs ...Instruction) Instruction {
-	return &inParallel{
-		Setup:  s,
+func (s *Setup) InParallel(instrs ...Instruction) *InParallel {
+	return &InParallel{
+		setup:  s,
 		instrs: instrs,
 	}
 }
 
-func (ip *inParallel) Exec(l *log.Logger) error {
+func (ip *InParallel) Exec(l *log.Logger) error {
 	wg := new(sync.WaitGroup)
 	wg.Add(len(ip.instrs))
 	errChan := make(chan error, len(ip.instrs))
 	for idx, instr := range ip.instrs {
 		instrCopy := instr
-		loggerClone := ip.cloneLogger(l, fmt.Sprintf("InParallel(%d)", idx))
+		loggerClone := ip.setup.cloneLogger(l, fmt.Sprintf("InParallel(%d)", idx))
 		go func() {
 			defer wg.Done()
 			if err := instrCopy.Exec(loggerClone); err != nil {
@@ -478,23 +498,23 @@ func (ip *inParallel) Exec(l *log.Logger) error {
 	}
 }
 
-func (ip *inParallel) String() string {
+func (ip *InParallel) String() string {
 	return fmt.Sprintf("InParallel %v", len(ip.instrs))
 }
 
-// untilError
+// UntilError
 
-type untilError struct {
+type UntilError struct {
 	wrapped Instruction
 }
 
 func (s *Setup) UntilError(instr Instruction) Instruction {
-	return &untilError{
+	return &UntilError{
 		wrapped: instr,
 	}
 }
 
-func (ue *untilError) Exec(l *log.Logger) error {
+func (ue *UntilError) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
 	for idx := 0; true; idx++ {
@@ -507,28 +527,28 @@ func (ue *untilError) Exec(l *log.Logger) error {
 	return nil // ha! no dead code elimination!
 }
 
-func (ue *untilError) String() string {
+func (ue *UntilError) String() string {
 	return "UntilError"
 }
 
-// pickOne
+// PickOne
 
-type pickOne struct {
-	*Setup
+type PickOne struct {
+	setup  *Setup
 	instrs []Instruction
 }
 
-func (s *Setup) PickOne(instrs ...Instruction) Instruction {
-	return &pickOne{
-		Setup:  s,
+func (s *Setup) PickOne(instrs ...Instruction) *PickOne {
+	return &PickOne{
+		setup:  s,
 		instrs: instrs,
 	}
 }
 
-func (po *pickOne) Exec(l *log.Logger) error {
+func (po *PickOne) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
-	picked := po.rng.Intn(len(po.instrs))
+	picked := po.setup.rng.Intn(len(po.instrs))
 	instr := po.instrs[picked]
 	l.SetPrefix(fmt.Sprintf("%s|%v(%d)", parentPrefix, po, picked))
 	if err := instr.Exec(l); err != nil {
@@ -538,17 +558,17 @@ func (po *pickOne) Exec(l *log.Logger) error {
 	return nil
 }
 
-func (po *pickOne) String() string {
+func (po *PickOne) String() string {
 	return fmt.Sprintf("PickOne %v", len(po.instrs))
 }
 
-type logMsg string
+type LogMsg string
 
-func (s *Setup) Log(msg string) Instruction {
-	return logMsg(msg)
+func (s *Setup) Log(msg string) LogMsg {
+	return LogMsg(msg)
 }
 
-func (s logMsg) Exec(l *log.Logger) error {
+func (s LogMsg) Exec(l *log.Logger) error {
 	parentPrefix := l.Prefix()
 	defer l.SetPrefix(parentPrefix)
 	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, s))
@@ -556,7 +576,7 @@ func (s logMsg) Exec(l *log.Logger) error {
 	return nil
 }
 
-func (s logMsg) String() string {
+func (s LogMsg) String() string {
 	return "Log"
 }
 
