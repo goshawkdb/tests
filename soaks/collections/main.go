@@ -66,7 +66,9 @@ func main() {
 				stoppableServers.Stop(), // will leave all 3 running
 				setup.Sleep(30 * time.Second),
 				rm1.Signal(syscall.SIGUSR1),
+				setup.Sleep(time.Second),
 				rm2.Signal(syscall.SIGUSR1),
+				setup.Sleep(time.Second),
 				rm3.Signal(syscall.SIGUSR1),
 				setup.Sleep(30 * time.Second),
 			}),
