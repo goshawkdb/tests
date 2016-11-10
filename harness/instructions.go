@@ -124,6 +124,52 @@ func (pp *PathProvider) EnsureDir() error {
 	return os.MkdirAll(pp.p, 0750)
 }
 
+// path copier
+
+type PathCopier struct {
+	src      *PathProvider
+	dest     *PathProvider
+	receiver *PathProvider
+}
+
+func (pp *PathProvider) CopyTo(dir, receiver *PathProvider) Instruction {
+	return &PathCopier{
+		src:      pp,
+		dest:     dir,
+		receiver: receiver,
+	}
+}
+
+func (pc *PathCopier) Exec(l *log.Logger) error {
+	parentPrefix := l.Prefix()
+	defer l.SetPrefix(parentPrefix)
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, pc))
+
+	src := pc.src.Path()
+	dest := pc.dest.Path()
+	l.Printf("Copying %v into %v", src, dest)
+	data, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	destStat, err := os.Stat(dest)
+	if err != nil {
+		return err
+	}
+	if destStat.Mode().IsDir() {
+		dest = filepath.Join(dest, filepath.Base(src))
+	}
+	err = ioutil.WriteFile(dest, data, 0644)
+	if err != nil {
+		return err
+	}
+	return pc.receiver.SetPath(dest, false)
+}
+
+func (pc *PathCopier) String() string {
+	return "PathCopier"
+}
+
 // Command
 
 type Command struct {
