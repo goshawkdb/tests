@@ -24,7 +24,7 @@
         "localhost:10019",
         "localhost:10020"
     ],
-    "F": 10,
+    "F": 4,
     "MaxRMCount": 128,
     "NoSync": true,
     "ClientCertificateFingerprints": {
