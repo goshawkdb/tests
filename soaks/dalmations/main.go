@@ -10,7 +10,7 @@ import (
 func main() {
 	setup := h.NewSetup()
 
-	dalmations := 21 // yeah yeah, I know
+	dalmations := 31 // yeah yeah, I know
 
 	rms := make([]*h.RM, dalmations)
 	rmsStart := make([]h.Instruction, dalmations)
