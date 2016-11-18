@@ -12,19 +12,15 @@ import (
 func ParCount(th *tests.TestHelper) {
 	parCount := 16
 	limit := uint64(1000)
-	th.CreateConnections(parCount)
+	conn := th.CreateConnections(1)[0]
 
 	defer th.Shutdown()
-	vsn, err := th.SetRootToNZeroObjs(parCount)
-	th.MaybeFatal(err)
-	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
+	vsn, _ := conn.SetRootToNZeroObjs(parCount)
+	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(parCount)
-	endBarrier.Add(parCount)
-	errCh := make(chan error, parCount)
-	for idx := 0; idx < parCount; idx++ {
-		idxCopy := idx
-		go runCount(idxCopy, th, vsn, limit, startBarrier, endBarrier, errCh)
-	}
+	endBarrier, errCh := th.InParallel(parCount, func(idx int, conn *tests.Connection) error {
+		return runCount(idx, conn, vsn, limit, startBarrier)
+	})
 	go func() {
 		endBarrier.Wait()
 		close(errCh)
@@ -32,18 +28,16 @@ func ParCount(th *tests.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func runCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit uint64, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
-	defer endBarrier.Done()
-	err := th.AwaitRootVersionChange(connIdx, rootVsn)
+func runCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limit uint64, startBarrier *sync.WaitGroup) error {
+	err := conn.AwaitRootVersionChange(rootVsn)
 	startBarrier.Done()
 	if err != nil {
-		errCh <- err
-		return
+		return err
 	}
 	startBarrier.Wait()
-	var myObjVarUUId *common.VarUUId
-	_, _, err = th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := txn.GetRootObject()
+	var myObjRef client.ObjectRef
+	_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+		rootObj, err := conn.GetRootObject(txn)
 		if err != nil {
 			return nil, err
 		}
@@ -51,20 +45,17 @@ func runCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit ui
 		if err != nil {
 			return nil, err
 		}
-		myObj := refs[connIdx]
-		myObjVarUUId = myObj.Id
+		myObjRef = refs[connIdx]
 		return nil, nil
 	})
 	if err != nil {
-		errCh <- err
-		return
+		return err
 	}
 	encountered := make(map[uint64]bool)
 	expected := uint64(0)
-	buf := make([]byte, 8)
 	for {
-		res, _, _ := th.RunTransaction(connIdx, func(txn *client.Txn) (interface{}, error) {
-			obj, err := txn.GetObject(myObjVarUUId)
+		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+			obj, err := txn.GetObject(myObjRef)
 			if err != nil {
 				return nil, err
 			}
@@ -78,15 +69,14 @@ func runCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit ui
 				return nil, fmt.Errorf("%v, Expected to find %v but found %v", connIdx, expected, cur)
 			}
 			cur++
-			binary.BigEndian.PutUint64(buf, cur)
-			if err := obj.Set(buf); err != nil {
+			binary.BigEndian.PutUint64(val, cur)
+			if err := obj.Set(val); err != nil {
 				return nil, err
 			}
 			return cur, nil
 		})
 		if err != nil {
-			errCh <- err
-			return
+			return err
 		}
 		expected++
 		if res.(uint64) == limit {
@@ -95,8 +85,8 @@ func runCount(connIdx int, th *tests.TestHelper, rootVsn *common.TxnId, limit ui
 	}
 	for n := uint64(0); n < limit; n++ {
 		if !encountered[n] {
-			errCh <- fmt.Errorf("%v: Failed to encounter %v", connIdx, n)
-			return
+			return fmt.Errorf("%v: Failed to encounter %v", connIdx, n)
 		}
 	}
+	return nil
 }

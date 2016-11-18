@@ -20,21 +20,17 @@ func AtomicRW(th *tests.TestHelper) {
 
 	conns := 4
 
-	th.CreateConnections(1 + conns)
+	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
-	vsn, err := th.SetRootToNZeroObjs(2)
-	th.MaybeFatal(err)
+	vsn, _ := conn.SetRootToNZeroObjs(2)
 
-	startBarrier, endBarrier := new(sync.WaitGroup), new(sync.WaitGroup)
+	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(conns)
-	endBarrier.Add(conns)
-	errCh := make(chan error, conns)
 
-	for idx := 0; idx < conns; idx++ {
-		connNum := idx + 1
-		go runTxn(th, vsn, connNum, attempts, startBarrier, endBarrier, errCh)
-	}
+	endBarrier, errCh := th.InParallel(conns, func(connIdx int, conn *tests.Connection) error {
+		return runTxn(conn, vsn, attempts, startBarrier)
+	})
 
 	c := make(chan struct{})
 	go func() {
@@ -44,26 +40,23 @@ func AtomicRW(th *tests.TestHelper) {
 	}()
 
 	startBarrier.Wait()
-	runObserver(th, c)
-	runObserver(th, c)
+	runObserver(conn, c)
+	runObserver(conn, c)
 	th.MaybeFatal(<-errCh)
 }
 
-func runTxn(th *tests.TestHelper, rootVsn *common.TxnId, connNum int, attempts int, startBarrier, endBarrier *sync.WaitGroup, errCh chan error) {
-	defer endBarrier.Done()
-	err := th.AwaitRootVersionChange(connNum, rootVsn)
+func runTxn(conn *tests.Connection, rootVsn *common.TxnId, attempts int, startBarrier *sync.WaitGroup) error {
+	err := conn.AwaitRootVersionChange(rootVsn)
 	startBarrier.Done()
 	if err != nil {
-		errCh <- err
-		return
+		return err
 	}
 	startBarrier.Wait()
-	buf := make([]byte, 8)
 	for ; attempts > 0; attempts-- {
 		time.Sleep(10 * time.Millisecond)
 		if attempts%2 == 0 {
-			_, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
-				rootObj, err := txn.GetRootObject()
+			_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+				rootObj, err := conn.GetRootObject(txn)
 				if err != nil {
 					return nil, err
 				}
@@ -78,29 +71,23 @@ func runTxn(th *tests.TestHelper, rootVsn *common.TxnId, connNum int, attempts i
 					return nil, err
 				}
 				x := binary.BigEndian.Uint64(xVal)
+				binary.BigEndian.PutUint64(xVal, x+1)
+				if err = xObj.Set(xVal); err != nil {
+					return nil, err
+				}
 				if x%2 == 0 {
-					binary.BigEndian.PutUint64(buf, x+1)
-					if err = xObj.Set(buf); err != nil {
-						return nil, err
-					}
-					if err = yObj.Set(buf); err != nil {
-						return nil, err
-					}
-				} else {
-					binary.BigEndian.PutUint64(buf, x+1)
-					if err = xObj.Set(buf); err != nil {
+					if err = yObj.Set(xVal); err != nil {
 						return nil, err
 					}
 				}
 				return nil, nil
 			})
 			if err != nil {
-				errCh <- err
-				return
+				return err
 			}
 		} else {
-			_, _, err = th.RunTransaction(connNum, func(txn *client.Txn) (interface{}, error) {
-				rootObj, err := txn.GetRootObject()
+			_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+				rootObj, err := conn.GetRootObject(txn)
 				if err != nil {
 					return nil, err
 				}
@@ -116,26 +103,32 @@ func runTxn(th *tests.TestHelper, rootVsn *common.TxnId, connNum int, attempts i
 				}
 				x := binary.BigEndian.Uint64(xVal)
 				if x%2 == 0 {
-					binary.BigEndian.PutUint64(buf, x+2)
-					return nil, yObj.Set(buf)
+					binary.BigEndian.PutUint64(xVal, x+2)
+					return nil, yObj.Set(xVal)
 				} else {
-					binary.BigEndian.PutUint64(buf, x+1)
-					return nil, xObj.Set(buf)
+					binary.BigEndian.PutUint64(xVal, x+1)
+					return nil, xObj.Set(xVal)
 				}
 			})
 			if err != nil {
-				errCh <- err
-				return
+				return err
 			}
 		}
 	}
+	return nil
 }
 
-func runObserver(th *tests.TestHelper, terminate chan struct{}) {
+func runObserver(conn *tests.Connection, terminate chan struct{}) {
 	var x, y uint64
 	for {
-		res, _, err := th.RunTransaction(0, func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := txn.GetRootObject()
+		select {
+		case <-terminate:
+			return
+		default:
+		}
+		time.Sleep(10 * time.Millisecond)
+		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+			rootObj, err := conn.GetRootObject(txn)
 			if err != nil {
 				return nil, err
 			}
@@ -149,12 +142,12 @@ func runObserver(th *tests.TestHelper, terminate chan struct{}) {
 			if err != nil {
 				return nil, err
 			}
-			x := binary.BigEndian.Uint64(xVal)
+			x = binary.BigEndian.Uint64(xVal)
 			yVal, err := yObj.Value()
 			if err != nil {
 				return nil, err
 			}
-			y := binary.BigEndian.Uint64(yVal)
+			y = binary.BigEndian.Uint64(yVal)
 			if x%2 == 0 {
 				return nil, nil
 			} else {
@@ -162,14 +155,9 @@ func runObserver(th *tests.TestHelper, terminate chan struct{}) {
 				return x == y, nil
 			}
 		})
-		th.MaybeFatal(err)
+		conn.MaybeFatal(err)
 		if resBool, ok := res.(bool); ok && !resBool {
-			th.Fatal("Observed x ==", x, "y ==", y)
-		}
-		select {
-		case <-terminate:
-			return
-		default:
+			conn.Fatal("Observed x ==", x, "y ==", y)
 		}
 	}
 }

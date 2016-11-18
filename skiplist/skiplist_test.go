@@ -5,32 +5,30 @@ import (
 	"testing"
 )
 
-var hosts = []string{"localhost:10001", "localhost:10002", "localhost:10003"}
-
 func TestCreate(t *testing.T) {
-	Create(tests.NewTestHelper(t, hosts...))
+	Create(tests.NewTestHelper(t))
 }
 
 func TestInsert(t *testing.T) {
-	Insert(tests.NewTestHelper(t, hosts...))
+	Insert(tests.NewTestHelper(t))
 }
 
 func TestInsertAndGet(t *testing.T) {
-	InsertAndGet(tests.NewTestHelper(t, hosts...))
+	InsertAndGet(tests.NewTestHelper(t))
 }
 
 func TestInsertAndGetManyOrdered(t *testing.T) {
-	InsertAndGetManyOrdered(tests.NewTestHelper(t, hosts...))
+	InsertAndGetManyOrdered(tests.NewTestHelper(t))
 }
 
 func TestInsertAndGetManyPermutation(t *testing.T) {
-	InsertAndGetManyPermutation(tests.NewTestHelper(t, hosts...))
+	InsertAndGetManyPermutation(tests.NewTestHelper(t))
 }
 
 func TestInsertAndGetManyPar(t *testing.T) {
-	InsertAndGetManyPar(tests.NewTestHelper(t, hosts...))
+	InsertAndGetManyPar(tests.NewTestHelper(t))
 }
 
 func TestInsertAndGetManyParPermutation(t *testing.T) {
-	InsertAndGetManyParPermutation(tests.NewTestHelper(t, hosts...))
+	InsertAndGetManyParPermutation(tests.NewTestHelper(t))
 }

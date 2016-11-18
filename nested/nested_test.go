@@ -5,24 +5,22 @@ import (
 	"testing"
 )
 
-var hosts = []string{"localhost:10001", "localhost:10002", "localhost:10003"}
-
 func TestNestedRead(t *testing.T) {
-	NestedRead(tests.NewTestHelper(t, hosts...))
+	NestedRead(tests.NewTestHelper(t))
 }
 
 func TestNestedWrite(t *testing.T) {
-	NestedWrite(tests.NewTestHelper(t, hosts...))
+	NestedWrite(tests.NewTestHelper(t))
 }
 
 func TestNestedInnerAbort(t *testing.T) {
-	NestedInnerAbort(tests.NewTestHelper(t, hosts...))
+	NestedInnerAbort(tests.NewTestHelper(t))
 }
 
 func TestNestedInnerRetry(t *testing.T) {
-	NestedInnerRetry(tests.NewTestHelper(t, hosts...))
+	NestedInnerRetry(tests.NewTestHelper(t))
 }
 
 func TestNestedInnerCreate(t *testing.T) {
-	NestedInnerCreate(tests.NewTestHelper(t, hosts...))
+	NestedInnerCreate(tests.NewTestHelper(t))
 }
