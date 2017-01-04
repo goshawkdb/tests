@@ -2,15 +2,19 @@ package harness
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
+	config "goshawkdb.io/server/configuration"
 	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -80,6 +84,12 @@ func (s *Setup) String() string {
 	return "Setup"
 }
 
+// lazy path
+
+type LazyPath interface {
+	Path() string
+}
+
 // path provider
 
 type PathProvider struct {
@@ -122,6 +132,24 @@ func (pp *PathProvider) EnsureDir() error {
 		return errors.New("Cannot create dir of empty path")
 	}
 	return os.MkdirAll(pp.p, 0750)
+}
+
+func (pp *PathProvider) Join(str string) *PathJoin {
+	return &PathJoin{
+		pp:    pp,
+		extra: str,
+	}
+}
+
+// path join
+
+type PathJoin struct {
+	pp    *PathProvider
+	extra string
+}
+
+func (pj *PathJoin) Path() string {
+	return filepath.Join(pj.pp.Path(), pj.extra)
 }
 
 // path copier
@@ -168,6 +196,117 @@ func (pc *PathCopier) Exec(l *log.Logger) error {
 
 func (pc *PathCopier) String() string {
 	return "PathCopier"
+}
+
+// Config provider
+
+type ConfigProvider struct {
+	*config.ConfigurationJSON
+	hostDeltas   map[string]bool
+	fDelta       *uint8
+	clientDeltas map[string]map[string]*config.CapabilityJSON
+}
+
+func NewConfigProvider(c *config.ConfigurationJSON) *ConfigProvider {
+	return &ConfigProvider{
+		ConfigurationJSON: c,
+		hostDeltas:        make(map[string]bool),
+		clientDeltas:      make(map[string]map[string]*config.CapabilityJSON),
+	}
+}
+
+func (cp *ConfigProvider) Clone() *ConfigProvider {
+	return &ConfigProvider{
+		ConfigurationJSON: cp.ConfigurationJSON,
+		hostDeltas:        make(map[string]bool),
+		clientDeltas:      make(map[string]map[string]*config.CapabilityJSON),
+	}
+}
+
+func (cp *ConfigProvider) Ports() ([]uint16, error) {
+	ports := make([]uint16, len(cp.Hosts))
+	for idx, host := range cp.Hosts {
+		_, portStr, err := net.SplitHostPort(host)
+		if err != nil {
+			return nil, err
+		}
+		portInt64, err := strconv.ParseUint(portStr, 0, 16)
+		if err != nil {
+			return nil, err
+		}
+		ports[idx] = uint16(portInt64)
+	}
+	return ports, nil
+}
+
+func (cp *ConfigProvider) AddHost(host string) *ConfigProvider {
+	cp.hostDeltas[host] = true
+	return cp
+}
+
+func (cp *ConfigProvider) RemoveHost(host string) *ConfigProvider {
+	cp.hostDeltas[host] = false
+	return cp
+}
+
+func (cp *ConfigProvider) ChangeF(f uint8) *ConfigProvider {
+	cp.fDelta = &f
+	return cp
+}
+
+func (cp *ConfigProvider) Writer(lp LazyPath) *ConfigWriter {
+	return &ConfigWriter{
+		c:  cp,
+		lp: lp,
+	}
+}
+
+// config writer
+
+type ConfigWriter struct {
+	c  *ConfigProvider
+	lp LazyPath
+}
+
+func (cw *ConfigWriter) Exec(l *log.Logger) error {
+	c := cw.c.ConfigurationJSON
+	c.Version += 1
+	for hostPrime, added := range cw.c.hostDeltas {
+		found := false
+		for idx, host := range c.Hosts {
+			if found = host == hostPrime; found {
+				if !added {
+					c.Hosts = append(c.Hosts[:idx], c.Hosts[idx+1:]...)
+				}
+				break
+			}
+		}
+		if added && !found {
+			c.Hosts = append(c.Hosts, hostPrime)
+		}
+	}
+	if cw.c.fDelta != nil {
+		c.F = *cw.c.fDelta
+	}
+	for fingerprint, roots := range cw.c.clientDeltas {
+		if roots == nil {
+			delete(c.ClientCertificateFingerprints, fingerprint)
+		} else {
+			c.ClientCertificateFingerprints[fingerprint] = roots
+		}
+	}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+
+	dest := cw.lp.Path()
+	l.Printf("Writing config %v into %v", c, dest)
+	data, err := json.MarshalIndent(cw.c, "", "\t")
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(dest, data, 0644)
+
 }
 
 // Command
@@ -355,11 +494,11 @@ type RM struct {
 	*Command
 	name       string
 	port       uint16
-	certPath   *PathProvider
-	configPath *PathProvider
+	certPath   LazyPath
+	configPath LazyPath
 }
 
-func (s *Setup) NewRM(name string, port uint16, certPath, configPath *PathProvider) *RM {
+func (s *Setup) NewRM(name string, port uint16, certPath, configPath LazyPath) *RM {
 	if certPath == nil {
 		certPath = s.GosCert
 	}
