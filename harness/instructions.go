@@ -271,6 +271,10 @@ type ConfigWriter struct {
 func (cw *ConfigWriter) Exec(l *log.Logger) error {
 	c := cw.c.ConfigurationJSON
 	c.Version += 1
+	if len(c.ClusterId) == 0 {
+		c.ClusterId = fmt.Sprintf("Test%d", time.Now().UnixNano())
+	}
+
 	for hostPrime, added := range cw.c.hostDeltas {
 		found := false
 		for idx, host := range c.Hosts {

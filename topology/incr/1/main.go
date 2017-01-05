@@ -11,8 +11,6 @@ func main() {
 	setup := h.NewSetup()
 
 	config := &config.ConfigurationJSON{
-		ClusterId:  "incr1",
-		Version:    0,
 		Hosts:      []string{"localhost:10001"},
 		F:          0,
 		MaxRMCount: 5,
