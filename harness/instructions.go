@@ -201,32 +201,47 @@ func (pc *PathCopier) String() string {
 
 // Config provider
 
-type ConfigProvider struct {
-	*config.ConfigurationJSON
+type ConfigProvider interface {
+	Eval() (*config.ConfigurationJSON, error)
+}
+
+type BaseConfigProvider config.ConfigurationJSON
+
+func (bcp *BaseConfigProvider) Eval() (*config.ConfigurationJSON, error) {
+	return (*config.ConfigurationJSON)(bcp), nil
+}
+
+type MutableConfigProvider struct {
+	cp           ConfigProvider
+	result       *config.ConfigurationJSON
 	hostDeltas   map[string]bool
 	fPrime       *uint8
 	clientDeltas map[string]map[string]*config.CapabilityJSON
 }
 
-func NewConfigProvider(c *config.ConfigurationJSON) *ConfigProvider {
-	return &ConfigProvider{
-		ConfigurationJSON: c,
-		hostDeltas:        make(map[string]bool),
-		clientDeltas:      make(map[string]map[string]*config.CapabilityJSON),
+func NewMutableConfigProvider(c *config.ConfigurationJSON) *MutableConfigProvider {
+	return &MutableConfigProvider{
+		cp:           (*BaseConfigProvider)(c),
+		hostDeltas:   make(map[string]bool),
+		clientDeltas: make(map[string]map[string]*config.CapabilityJSON),
 	}
 }
 
-func (cp *ConfigProvider) Clone() *ConfigProvider {
-	return &ConfigProvider{
-		ConfigurationJSON: cp.ConfigurationJSON,
-		hostDeltas:        make(map[string]bool),
-		clientDeltas:      make(map[string]map[string]*config.CapabilityJSON),
+func (mcp *MutableConfigProvider) Clone() *MutableConfigProvider {
+	return &MutableConfigProvider{
+		cp:           mcp,
+		hostDeltas:   make(map[string]bool),
+		clientDeltas: make(map[string]map[string]*config.CapabilityJSON),
 	}
 }
 
-func (cp *ConfigProvider) Ports() ([]uint16, error) {
-	ports := make([]uint16, len(cp.Hosts))
-	for idx, host := range cp.Hosts {
+func (mcp *MutableConfigProvider) Ports() ([]uint16, error) {
+	c, err := mcp.cp.Eval()
+	if err != nil {
+		return nil, err
+	}
+	ports := make([]uint16, len(c.Hosts))
+	for idx, host := range c.Hosts {
 		_, portStr, err := net.SplitHostPort(host)
 		if err != nil {
 			return nil, err
@@ -240,47 +255,36 @@ func (cp *ConfigProvider) Ports() ([]uint16, error) {
 	return ports, nil
 }
 
-func (cp *ConfigProvider) AddHost(host string) *ConfigProvider {
-	cp.hostDeltas[host] = true
-	return cp
+func (mcp *MutableConfigProvider) AddHost(host string) *MutableConfigProvider {
+	mcp.hostDeltas[host] = true
+	return mcp
 }
 
-func (cp *ConfigProvider) RemoveHost(host string) *ConfigProvider {
-	cp.hostDeltas[host] = false
-	return cp
+func (mcp *MutableConfigProvider) RemoveHost(host string) *MutableConfigProvider {
+	mcp.hostDeltas[host] = false
+	return mcp
 }
 
-func (cp *ConfigProvider) ChangeF(f uint8) *ConfigProvider {
-	cp.fPrime = &f
-	return cp
+func (mcp *MutableConfigProvider) ChangeF(f uint8) *MutableConfigProvider {
+	mcp.fPrime = &f
+	return mcp
 }
 
-func (cp *ConfigProvider) Writer(lp LazyPath) *ConfigWriter {
-	return &ConfigWriter{
-		c:  cp,
-		lp: lp,
+func (mcp *MutableConfigProvider) Eval() (*config.ConfigurationJSON, error) {
+	if mcp.result != nil {
+		return mcp.result, nil
 	}
-}
-
-// config writer
-
-type ConfigWriter struct {
-	c        *ConfigProvider
-	lp       LazyPath
-	modified *config.ConfigurationJSON
-}
-
-func (cw *ConfigWriter) modify() error {
-	if cw.modified != nil {
-		return nil
+	c, err := mcp.cp.Eval()
+	if err != nil {
+		return nil, err
 	}
-	c := cw.c.ConfigurationJSON
+
 	c.Version += 1
 	if len(c.ClusterId) == 0 {
 		c.ClusterId = fmt.Sprintf("Test%d", time.Now().UnixNano())
 	}
 
-	for hostPrime, added := range cw.c.hostDeltas {
+	for hostPrime, added := range mcp.hostDeltas {
 		found := false
 		for idx, host := range c.Hosts {
 			if found = host == hostPrime; found {
@@ -294,10 +298,10 @@ func (cw *ConfigWriter) modify() error {
 			c.Hosts = append(c.Hosts, hostPrime)
 		}
 	}
-	if cw.c.fPrime != nil {
-		c.F = *cw.c.fPrime
+	if mcp.fPrime != nil {
+		c.F = *mcp.fPrime
 	}
-	for fingerprint, roots := range cw.c.clientDeltas {
+	for fingerprint, roots := range mcp.clientDeltas {
 		if roots == nil {
 			delete(c.ClientCertificateFingerprints, fingerprint)
 		} else {
@@ -305,50 +309,80 @@ func (cw *ConfigWriter) modify() error {
 		}
 	}
 	if err := c.Validate(); err != nil {
-		return err
+		return nil, err
 	}
-	cw.modified = c
-	return nil
+	mcp.result = c
+	return c, nil
+}
+
+func (mcp *MutableConfigProvider) Writer(lp LazyPath) *ConfigWriter {
+	return &ConfigWriter{
+		lp: lp,
+		cp: mcp,
+	}
+}
+
+func (mcp *MutableConfigProvider) NewConfigComparer(hosts ...string) *ConfigComparer {
+	return &ConfigComparer{
+		cp:    mcp,
+		hosts: hosts,
+	}
+}
+
+// config writer
+
+type ConfigWriter struct {
+	lp LazyPath
+	cp ConfigProvider
 }
 
 func (cw *ConfigWriter) Exec(l *log.Logger) error {
-	if err := cw.modify(); err != nil {
+	if c, err := cw.cp.Eval(); err == nil {
+		dest := cw.lp.Path()
+		l.Printf("Writing config %v into %v", c, dest)
+		data, err := json.MarshalIndent(c, "", "\t")
+		if err != nil {
+			return err
+		}
+		return ioutil.WriteFile(dest, data, 0644)
+	} else {
 		return err
-	}
-	dest := cw.lp.Path()
-	l.Printf("Writing config %v into %v", cw.modified, dest)
-	data, err := json.MarshalIndent(cw.c, "", "\t")
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(dest, data, 0644)
-}
-
-func (cw *ConfigWriter) NewConfigComparer(host string) *ConfigComparer {
-	return &ConfigComparer{
-		cw:   cw,
-		host: host,
 	}
 }
 
 // Config Compare
 
 type ConfigComparer struct {
-	cw   *ConfigWriter
-	host string
+	cp    ConfigProvider
+	hosts []string
 }
 
 func (cc *ConfigComparer) Exec(l *log.Logger) error {
-	if err := cc.cw.modify(); err != nil {
-		return err
-	}
-	if equal, err := hconfig.CompareConfigs(cc.host, cc.cw.modified); err != nil {
-		return err
-	} else if !equal {
-		return errors.New("Configs do not match")
-	} else {
+	parentPrefix := l.Prefix()
+	defer l.SetPrefix(parentPrefix)
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cc))
+	if c, err := cc.cp.Eval(); err == nil {
+		for _, host := range cc.hosts {
+			l.Printf("Starting against %s", host)
+			if equal, err := hconfig.CompareConfigs(host, c); err != nil {
+				l.Printf("Config Comparer error: %v", err)
+				return err
+			} else if !equal {
+				err = errors.New("Configs do not match")
+				l.Print(err)
+				return err
+			} else {
+				l.Printf("Configs match at %s", host)
+			}
+		}
 		return nil
+	} else {
+		return err
 	}
+}
+
+func (cc *ConfigComparer) String() string {
+	return "ConfigComparer"
 }
 
 // Command

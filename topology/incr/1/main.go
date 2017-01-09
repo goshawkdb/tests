@@ -21,10 +21,13 @@ func main() {
 					Read:  true,
 					Write: true,
 				},
+				"system:config": {
+					Read: true,
+				},
 			},
 		},
 	}
-	configProvider := h.NewConfigProvider(config)
+	configProvider := h.NewMutableConfigProvider(config)
 	configProvider2 := configProvider.Clone()
 	configProvider2.AddHost("localhost:10002")
 
@@ -38,9 +41,11 @@ func main() {
 		configProvider.Writer(configPath),
 		rm1.Start(),
 		setup.Sleep(5 * time.Second),
+		configProvider.NewConfigComparer("localhost:10001"),
 		configProvider2.Writer(configPath),
 		rm2.Start(),
 		setup.Sleep(15 * time.Second),
+		configProvider2.NewConfigComparer("localhost:10001", "localhost:10002"),
 		rm1.Terminate(),
 		rm2.Terminate(),
 		rm1.Wait(),
