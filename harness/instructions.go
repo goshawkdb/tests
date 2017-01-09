@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	config "goshawkdb.io/server/configuration"
+	hconfig "goshawkdb.io/tests/harness/config"
 	"io"
 	"io/ioutil"
 	"log"
@@ -203,7 +204,7 @@ func (pc *PathCopier) String() string {
 type ConfigProvider struct {
 	*config.ConfigurationJSON
 	hostDeltas   map[string]bool
-	fDelta       *uint8
+	fPrime       *uint8
 	clientDeltas map[string]map[string]*config.CapabilityJSON
 }
 
@@ -250,7 +251,7 @@ func (cp *ConfigProvider) RemoveHost(host string) *ConfigProvider {
 }
 
 func (cp *ConfigProvider) ChangeF(f uint8) *ConfigProvider {
-	cp.fDelta = &f
+	cp.fPrime = &f
 	return cp
 }
 
@@ -264,11 +265,15 @@ func (cp *ConfigProvider) Writer(lp LazyPath) *ConfigWriter {
 // config writer
 
 type ConfigWriter struct {
-	c  *ConfigProvider
-	lp LazyPath
+	c        *ConfigProvider
+	lp       LazyPath
+	modified *config.ConfigurationJSON
 }
 
-func (cw *ConfigWriter) Exec(l *log.Logger) error {
+func (cw *ConfigWriter) modify() error {
+	if cw.modified != nil {
+		return nil
+	}
 	c := cw.c.ConfigurationJSON
 	c.Version += 1
 	if len(c.ClusterId) == 0 {
@@ -289,8 +294,8 @@ func (cw *ConfigWriter) Exec(l *log.Logger) error {
 			c.Hosts = append(c.Hosts, hostPrime)
 		}
 	}
-	if cw.c.fDelta != nil {
-		c.F = *cw.c.fDelta
+	if cw.c.fPrime != nil {
+		c.F = *cw.c.fPrime
 	}
 	for fingerprint, roots := range cw.c.clientDeltas {
 		if roots == nil {
@@ -302,15 +307,48 @@ func (cw *ConfigWriter) Exec(l *log.Logger) error {
 	if err := c.Validate(); err != nil {
 		return err
 	}
+	cw.modified = c
+	return nil
+}
 
+func (cw *ConfigWriter) Exec(l *log.Logger) error {
+	if err := cw.modify(); err != nil {
+		return err
+	}
 	dest := cw.lp.Path()
-	l.Printf("Writing config %v into %v", c, dest)
+	l.Printf("Writing config %v into %v", cw.modified, dest)
 	data, err := json.MarshalIndent(cw.c, "", "\t")
 	if err != nil {
 		return err
 	}
 	return ioutil.WriteFile(dest, data, 0644)
+}
 
+func (cw *ConfigWriter) NewConfigComparer(host string) *ConfigComparer {
+	return &ConfigComparer{
+		cw:   cw,
+		host: host,
+	}
+}
+
+// Config Compare
+
+type ConfigComparer struct {
+	cw   *ConfigWriter
+	host string
+}
+
+func (cc *ConfigComparer) Exec(l *log.Logger) error {
+	if err := cc.cw.modify(); err != nil {
+		return err
+	}
+	if equal, err := hconfig.CompareConfigs(cc.host, cc.cw.modified); err != nil {
+		return err
+	} else if !equal {
+		return errors.New("Configs do not match")
+	} else {
+		return nil
+	}
 }
 
 // Command

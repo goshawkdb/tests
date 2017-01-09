@@ -9,11 +9,15 @@ import (
 	"goshawkdb.io/tests"
 )
 
-func CompareConfigs(provided *configuration.ConfigurationJSON) (bool, error) {
+func CompareConfigs(host string, provided *configuration.ConfigurationJSON) (bool, error) {
+	// we just use TestHelper to grab certs from the env
 	th := tests.NewTestHelper(nil)
 
-	c := th.CreateConnections(1)[0]
-	defer th.Shutdown()
+	c, err := client.NewConnection(host, th.ClientKeyPair, th.ClusterCert)
+	if err != nil {
+		return false, fmt.Errorf("Error on connection: %v", err)
+	}
+	defer c.Shutdown()
 
 	result, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		rootObjs, err := txn.GetRootObjects()
