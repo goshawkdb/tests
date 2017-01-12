@@ -13,6 +13,10 @@ type PortsAndF struct {
 	F     uint8
 }
 
+func (pf *PortsAndF) String() string {
+	return fmt.Sprintf("{Ports: %v, F: %v}", pf.Ports, pf.F)
+}
+
 func TopologyChange(before, after *PortsAndF, setup *h.Setup) []h.Instruction {
 	beforePorts := make(map[uint16]bool, len(before.Ports))
 	afterPorts := make(map[uint16]bool, len(after.Ports))
