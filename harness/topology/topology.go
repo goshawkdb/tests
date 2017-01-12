@@ -103,7 +103,7 @@ func TopologyChange(before, after *PortsAndF, setup *h.Setup) []h.Instruction {
 	}
 
 	rmsAfter := append(rmsSurvived, rmsAdded...)
-	instrs = append(instrs, setup.Sleep(time.Duration(15+len(rmsBefore)+len(rmsAfter))*time.Second))
+	instrs = append(instrs, setup.Sleep(time.Duration(15+len(rmsAfter))*time.Second))
 	for _, rm := range rmsRemoved {
 		instrs = append(instrs, rm.Wait())
 	}
