@@ -1,56 +1,21 @@
 package main
 
 import (
-	config "goshawkdb.io/server/configuration"
 	h "goshawkdb.io/tests/harness"
+	ht "goshawkdb.io/tests/harness/topology"
 	"log"
-	"time"
 )
 
 func main() {
-	setup := h.NewSetup()
-
-	config := &config.ConfigurationJSON{
-		Hosts:      []string{"localhost:10001"},
-		F:          0,
-		MaxRMCount: 5,
-		NoSync:     true,
-		ClientCertificateFingerprints: map[string]map[string]*config.CapabilityJSON{
-			"6c5b2b2efc0ef77248af64cda16445fdfe936c9f5484711d77c9d67bba5dfe44": {
-				"test": {
-					Read:  true,
-					Write: true,
-				},
-				"system:config": {
-					Read: true,
-				},
-			},
-		},
+	before := &ht.PortsAndF{
+		Ports: []uint16{10001},
+		F:     0,
 	}
-	configProvider := h.NewMutableConfigProvider(config)
-	configProvider2 := configProvider.Clone()
-	configProvider2.AddHost("localhost:10002")
-
-	configPath := setup.Dir.Join("config.json")
-
-	rm1 := setup.NewRM("one", 10001, nil, configPath)
-	rm2 := setup.NewRM("two", 10002, nil, configPath)
-
-	prog := h.Program([]h.Instruction{
-		setup,
-		configProvider.Writer(configPath),
-		rm1.Start(),
-		setup.Sleep(5 * time.Second),
-		configProvider.NewConfigComparer("localhost:10001"),
-		configProvider2.Writer(configPath),
-		rm2.Start(),
-		setup.Sleep(15 * time.Second),
-		configProvider2.NewConfigComparer("localhost:10001", "localhost:10002"),
-		rm1.Terminate(),
-		rm2.Terminate(),
-		rm1.Wait(),
-		rm2.Wait(),
-	})
+	after := &ht.PortsAndF{
+		Ports: []uint16{10001, 10002},
+		F:     0,
+	}
+	setup := h.NewSetup()
+	prog := h.Program(ht.TopologyChange(before, after, setup))
 	log.Println(h.Run(setup, prog))
-
 }

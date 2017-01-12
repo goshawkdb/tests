@@ -350,6 +350,10 @@ func (cw *ConfigWriter) Exec(l *log.Logger) error {
 	}
 }
 
+func (cw *ConfigWriter) String() string {
+	return "ConfigWriter"
+}
+
 // Config Compare
 
 type ConfigComparer struct {

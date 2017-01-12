@@ -12,8 +12,8 @@ func main() {
 		F:     0,
 	}
 	after := &ht.PortsAndF{
-		Ports: []uint16{10001, 10002, 10003},
-		F:     1,
+		Ports: []uint16{10001, 10002, 10003, 10004, 10005},
+		F:     2,
 	}
 	setup := h.NewSetup()
 	prog := h.Program(ht.TopologyChange(before, after, setup))
