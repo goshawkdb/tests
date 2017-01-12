@@ -568,8 +568,8 @@ func (cmdw *CommandWait) String() string {
 type RM struct {
 	setup *Setup
 	*Command
-	name       string
-	port       uint16
+	Name       string
+	Port       uint16
 	certPath   LazyPath
 	configPath LazyPath
 }
@@ -584,8 +584,8 @@ func (s *Setup) NewRM(name string, port uint16, certPath, configPath LazyPath) *
 	return &RM{
 		setup:      s,
 		Command:    s.NewCmd(s.GosBin, nil, &PathProvider{}, nil),
-		name:       name,
-		port:       port,
+		Name:       name,
+		Port:       port,
 		certPath:   certPath,
 		configPath: configPath,
 	}
@@ -606,7 +606,7 @@ func (rms *RMStart) Exec(l *log.Logger) error {
 
 	if rms.Command.args == nil {
 		dirPP := rms.Command.cwd
-		err := dirPP.SetPath(filepath.Join(rms.setup.Dir.Path(), rms.name), false)
+		err := dirPP.SetPath(filepath.Join(rms.setup.Dir.Path(), rms.Name), false)
 		if err != nil {
 			l.Printf("Error encountered: %v", err)
 			return err
@@ -618,7 +618,7 @@ func (rms *RMStart) Exec(l *log.Logger) error {
 
 		rms.Command.args = []string{
 			"-dir", dirPP.Path(),
-			"-port", fmt.Sprintf("%d", rms.port),
+			"-port", fmt.Sprintf("%d", rms.Port),
 			"-cert", rms.certPath.Path(),
 			"-config", rms.configPath.Path(),
 		}
@@ -630,7 +630,7 @@ func (rms *RMStart) Exec(l *log.Logger) error {
 }
 
 func (rms *RMStart) String() string {
-	return fmt.Sprintf("RMStart:%v", rms.name)
+	return fmt.Sprintf("RMStart:%v", rms.Name)
 }
 
 // sleepy
