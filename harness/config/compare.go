@@ -7,6 +7,7 @@ import (
 	"goshawkdb.io/server"
 	"goshawkdb.io/server/configuration"
 	"goshawkdb.io/tests"
+	"log"
 )
 
 func CompareConfigs(host string, provided *configuration.ConfigurationJSON) (bool, error) {
@@ -42,6 +43,7 @@ func CompareConfigs(host string, provided *configuration.ConfigurationJSON) (boo
 	if configFromGos.Equal(provided) {
 		return true, nil
 	} else {
+		log.Printf("Mismatched configs: gos: %v; provided: %v", configFromGos, provided)
 		return false, nil
 	}
 }
