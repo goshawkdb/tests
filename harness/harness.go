@@ -6,7 +6,14 @@ import (
 	"os"
 )
 
-func Run(setup *Setup, prog Instruction) error {
+type HarnessEnv struct {
+	envMap     map[string]string
+	binaryPath string
+	certPath   string
+	configPath string
+}
+
+func BuildHarnessEnv() *HarnessEnv {
 	envMap := extractFromEnv(
 		"GOSHAWKDB_BINARY",
 		"GOSHAWKDB_CLUSTER_CONFIG",
@@ -22,41 +29,54 @@ func Run(setup *Setup, prog Instruction) error {
 	flag.StringVar(&configPath, "config", "", "`Path` to configuration file.")
 	flag.Parse()
 
-	if len(binaryPath) > 0 {
-		if err := setup.GosBin.SetPath(binaryPath, true); err != nil {
+	return &HarnessEnv{
+		envMap:     envMap,
+		binaryPath: binaryPath,
+		certPath:   certPath,
+		configPath: configPath,
+	}
+}
+
+func (he *HarnessEnv) Run(setup *Setup, prog Instruction) error {
+	envMapCopy := make(map[string]string, len(he.envMap))
+	for k, v := range he.envMap {
+		envMapCopy[k] = v
+	}
+	if len(he.binaryPath) > 0 {
+		if err := setup.GosBin.SetPath(he.binaryPath, true); err != nil {
 			return err
 		}
 		fmt.Println(setup.GosBin.Path())
-		delete(envMap, "GOSHAWKDB_BINARY")
-	} else if path, found := envMap["GOSHAWKDB_BINARY"]; found {
+		delete(envMapCopy, "GOSHAWKDB_BINARY")
+	} else if path, found := envMapCopy["GOSHAWKDB_BINARY"]; found {
 		if err := setup.GosBin.SetPath(path, true); err != nil {
 			return err
 		}
 	}
 
-	if len(certPath) > 0 {
-		if err := setup.GosCert.SetPath(certPath, false); err != nil {
+	if len(he.certPath) > 0 {
+		if err := setup.GosCert.SetPath(he.certPath, false); err != nil {
 			return err
 		}
-		delete(envMap, "GOSHAWKDB_CLUSTER_CERT")
-	} else if path, found := envMap["GOSHAWKDB_CLUSTER_CERT"]; found {
+		delete(envMapCopy, "GOSHAWKDB_CLUSTER_CERT")
+	} else if path, found := envMapCopy["GOSHAWKDB_CLUSTER_CERT"]; found {
 		if err := setup.GosCert.SetPath(path, false); err != nil {
 			return err
 		}
 	}
 
-	if len(configPath) > 0 {
-		if err := setup.GosConfig.SetPath(configPath, false); err != nil {
+	if len(he.configPath) > 0 {
+		if err := setup.GosConfig.SetPath(he.configPath, false); err != nil {
 			return err
 		}
-		delete(envMap, "GOSHAWKDB_CLUSTER_CONFIG")
-	} else if path, found := envMap["GOSHAWKDB_CLUSTER_CONFIG"]; found {
+		delete(envMapCopy, "GOSHAWKDB_CLUSTER_CONFIG")
+	} else if path, found := envMapCopy["GOSHAWKDB_CLUSTER_CONFIG"]; found {
 		if err := setup.GosConfig.SetPath(path, false); err != nil {
 			return err
 		}
 	}
 
-	setup.SetEnv(envMap)
+	setup.SetEnv(envMapCopy)
 
 	l := setup.NewLogger()
 	return prog.Exec(l)

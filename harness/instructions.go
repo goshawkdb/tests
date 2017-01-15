@@ -2,15 +2,20 @@ package harness
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
+	config "goshawkdb.io/server/configuration"
+	hconfig "goshawkdb.io/tests/harness/config"
 	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -80,6 +85,12 @@ func (s *Setup) String() string {
 	return "Setup"
 }
 
+// lazy path
+
+type LazyPath interface {
+	Path() string
+}
+
 // path provider
 
 type PathProvider struct {
@@ -122,6 +133,24 @@ func (pp *PathProvider) EnsureDir() error {
 		return errors.New("Cannot create dir of empty path")
 	}
 	return os.MkdirAll(pp.p, 0750)
+}
+
+func (pp *PathProvider) Join(str string) *PathJoin {
+	return &PathJoin{
+		pp:    pp,
+		extra: str,
+	}
+}
+
+// path join
+
+type PathJoin struct {
+	pp    *PathProvider
+	extra string
+}
+
+func (pj *PathJoin) Path() string {
+	return filepath.Join(pj.pp.Path(), pj.extra)
 }
 
 // path copier
@@ -168,6 +197,196 @@ func (pc *PathCopier) Exec(l *log.Logger) error {
 
 func (pc *PathCopier) String() string {
 	return "PathCopier"
+}
+
+// Config provider
+
+type ConfigProvider interface {
+	Eval() (*config.ConfigurationJSON, error)
+}
+
+type BaseConfigProvider config.ConfigurationJSON
+
+func (bcp *BaseConfigProvider) Eval() (*config.ConfigurationJSON, error) {
+	return (*config.ConfigurationJSON)(bcp), nil
+}
+
+type MutableConfigProvider struct {
+	cp           ConfigProvider
+	result       *config.ConfigurationJSON
+	hostDeltas   map[string]bool
+	fPrime       *uint8
+	clientDeltas map[string]map[string]*config.CapabilityJSON
+}
+
+func NewMutableConfigProvider(c *config.ConfigurationJSON) *MutableConfigProvider {
+	return &MutableConfigProvider{
+		cp:           (*BaseConfigProvider)(c),
+		hostDeltas:   make(map[string]bool),
+		clientDeltas: make(map[string]map[string]*config.CapabilityJSON),
+	}
+}
+
+func (mcp *MutableConfigProvider) Clone() *MutableConfigProvider {
+	return &MutableConfigProvider{
+		cp:           mcp,
+		hostDeltas:   make(map[string]bool),
+		clientDeltas: make(map[string]map[string]*config.CapabilityJSON),
+	}
+}
+
+func (mcp *MutableConfigProvider) Ports() ([]uint16, error) {
+	c, err := mcp.cp.Eval()
+	if err != nil {
+		return nil, err
+	}
+	ports := make([]uint16, len(c.Hosts))
+	for idx, host := range c.Hosts {
+		_, portStr, err := net.SplitHostPort(host)
+		if err != nil {
+			return nil, err
+		}
+		portInt64, err := strconv.ParseUint(portStr, 0, 16)
+		if err != nil {
+			return nil, err
+		}
+		ports[idx] = uint16(portInt64)
+	}
+	return ports, nil
+}
+
+func (mcp *MutableConfigProvider) AddHost(host string) *MutableConfigProvider {
+	mcp.hostDeltas[host] = true
+	return mcp
+}
+
+func (mcp *MutableConfigProvider) RemoveHost(host string) *MutableConfigProvider {
+	mcp.hostDeltas[host] = false
+	return mcp
+}
+
+func (mcp *MutableConfigProvider) ChangeF(f uint8) *MutableConfigProvider {
+	mcp.fPrime = &f
+	return mcp
+}
+
+func (mcp *MutableConfigProvider) Eval() (*config.ConfigurationJSON, error) {
+	if mcp.result != nil {
+		return mcp.result, nil
+	}
+	c, err := mcp.cp.Eval()
+	if err != nil {
+		return nil, err
+	}
+
+	c.Version += 1
+	if len(c.ClusterId) == 0 {
+		c.ClusterId = fmt.Sprintf("Test%d", time.Now().UnixNano())
+	}
+
+	for hostPrime, added := range mcp.hostDeltas {
+		found := false
+		for idx, host := range c.Hosts {
+			if found = host == hostPrime; found {
+				if !added {
+					c.Hosts = append(c.Hosts[:idx], c.Hosts[idx+1:]...)
+				}
+				break
+			}
+		}
+		if added && !found {
+			c.Hosts = append(c.Hosts, hostPrime)
+		}
+	}
+	if mcp.fPrime != nil {
+		c.F = *mcp.fPrime
+	}
+	for fingerprint, roots := range mcp.clientDeltas {
+		if roots == nil {
+			delete(c.ClientCertificateFingerprints, fingerprint)
+		} else {
+			c.ClientCertificateFingerprints[fingerprint] = roots
+		}
+	}
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	mcp.result = c
+	return c, nil
+}
+
+func (mcp *MutableConfigProvider) Writer(lp LazyPath) *ConfigWriter {
+	return &ConfigWriter{
+		lp: lp,
+		cp: mcp,
+	}
+}
+
+func (mcp *MutableConfigProvider) NewConfigComparer(hosts ...string) *ConfigComparer {
+	return &ConfigComparer{
+		cp:    mcp,
+		hosts: hosts,
+	}
+}
+
+// config writer
+
+type ConfigWriter struct {
+	lp LazyPath
+	cp ConfigProvider
+}
+
+func (cw *ConfigWriter) Exec(l *log.Logger) error {
+	if c, err := cw.cp.Eval(); err == nil {
+		dest := cw.lp.Path()
+		l.Printf("Writing config %v into %v", c, dest)
+		data, err := json.MarshalIndent(c, "", "\t")
+		if err != nil {
+			return err
+		}
+		return ioutil.WriteFile(dest, data, 0644)
+	} else {
+		return err
+	}
+}
+
+func (cw *ConfigWriter) String() string {
+	return "ConfigWriter"
+}
+
+// Config Compare
+
+type ConfigComparer struct {
+	cp    ConfigProvider
+	hosts []string
+}
+
+func (cc *ConfigComparer) Exec(l *log.Logger) error {
+	parentPrefix := l.Prefix()
+	defer l.SetPrefix(parentPrefix)
+	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cc))
+	if c, err := cc.cp.Eval(); err == nil {
+		for _, host := range cc.hosts {
+			l.Printf("Starting against %s", host)
+			if equal, err := hconfig.CompareConfigs(host, c); err != nil {
+				l.Printf("Config Comparer error: %v", err)
+				return err
+			} else if !equal {
+				err = errors.New("Configs do not match")
+				l.Print(err)
+				return err
+			} else {
+				l.Printf("Configs match at %s", host)
+			}
+		}
+		return nil
+	} else {
+		return err
+	}
+}
+
+func (cc *ConfigComparer) String() string {
+	return "ConfigComparer"
 }
 
 // Command
@@ -353,13 +572,13 @@ func (cmdw *CommandWait) String() string {
 type RM struct {
 	setup *Setup
 	*Command
-	name       string
-	port       uint16
-	certPath   *PathProvider
-	configPath *PathProvider
+	Name       string
+	Port       uint16
+	certPath   LazyPath
+	configPath LazyPath
 }
 
-func (s *Setup) NewRM(name string, port uint16, certPath, configPath *PathProvider) *RM {
+func (s *Setup) NewRM(name string, port uint16, certPath, configPath LazyPath) *RM {
 	if certPath == nil {
 		certPath = s.GosCert
 	}
@@ -369,8 +588,8 @@ func (s *Setup) NewRM(name string, port uint16, certPath, configPath *PathProvid
 	return &RM{
 		setup:      s,
 		Command:    s.NewCmd(s.GosBin, nil, &PathProvider{}, nil),
-		name:       name,
-		port:       port,
+		Name:       name,
+		Port:       port,
 		certPath:   certPath,
 		configPath: configPath,
 	}
@@ -391,7 +610,7 @@ func (rms *RMStart) Exec(l *log.Logger) error {
 
 	if rms.Command.args == nil {
 		dirPP := rms.Command.cwd
-		err := dirPP.SetPath(filepath.Join(rms.setup.Dir.Path(), rms.name), false)
+		err := dirPP.SetPath(filepath.Join(rms.setup.Dir.Path(), rms.Name), false)
 		if err != nil {
 			l.Printf("Error encountered: %v", err)
 			return err
@@ -403,7 +622,7 @@ func (rms *RMStart) Exec(l *log.Logger) error {
 
 		rms.Command.args = []string{
 			"-dir", dirPP.Path(),
-			"-port", fmt.Sprintf("%d", rms.port),
+			"-port", fmt.Sprintf("%d", rms.Port),
 			"-cert", rms.certPath.Path(),
 			"-config", rms.configPath.Path(),
 		}
@@ -415,7 +634,7 @@ func (rms *RMStart) Exec(l *log.Logger) error {
 }
 
 func (rms *RMStart) String() string {
-	return fmt.Sprintf("RMStart:%v", rms.name)
+	return fmt.Sprintf("RMStart:%v", rms.Name)
 }
 
 // sleepy
