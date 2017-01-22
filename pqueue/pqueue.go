@@ -52,7 +52,7 @@ func runEnqueue(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limi
 	}
 
 	val := make([]byte, 8)
-	for ; limit > 0; limit-- {
+	for ; limit > 1; limit-- {
 		binary.BigEndian.PutUint64(val, limit)
 		_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 			root, err := txn.GetObject(myObjRef)
