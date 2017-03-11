@@ -15,6 +15,9 @@
             },
             "system:config": {
                 "Read": true
+            },
+            "system:prometheus": {
+                "Read": true
             }
         },
         "d61da08e2754e791aad2bc47e7ea651ce42ee15ccffdab96d1451f1f99ba1da7": {

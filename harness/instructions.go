@@ -518,8 +518,8 @@ func (cmds *CommandSignal) Exec(l *log.Logger) error {
 	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cmds))
 	l.Printf("Sending signal %v...", cmds.sig)
 	if err := cmds.cmd.Process.Signal(cmds.sig); err != nil {
-		l.Printf("Error encountered: %v", err)
-		return err
+		l.Printf("Error encountered (ignoring): %v", err)
+		// return err
 	}
 	l.Printf("Sending signal %v...done", cmds.sig)
 	return nil
@@ -625,6 +625,7 @@ func (rms *RMStart) Exec(l *log.Logger) error {
 			"-port", fmt.Sprintf("%d", rms.Port),
 			"-cert", rms.certPath.Path(),
 			"-config", rms.configPath.Path(),
+			"-prometheusPort", fmt.Sprintf("%d", 1000+rms.Port),
 		}
 
 		rms.Command.env = rms.setup.env

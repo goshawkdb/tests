@@ -8,6 +8,7 @@ import (
 )
 
 func main() {
+	he := h.BuildHarnessEnv()
 	setup := h.NewSetup()
 
 	rm1 := setup.NewRM("one", 10001, nil, nil)
@@ -18,7 +19,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cwdPP, err := h.NewPathProvider("/home/matthew/src/goshawkdb/collections/Go/src/goshawkdb.io/collections/linearhash", false)
+	cwdPP, err := h.NewPathProvider("/home/matthew/programming/goshawkdb/Go/src/goshawkdb.io/collections/linearhash", false)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -64,15 +65,15 @@ func main() {
 				setup.Sleep(2 * time.Minute),
 				stoppableTest.Stop(),
 				stoppableServers.Stop(), // will leave all 3 running
-				setup.Sleep(30 * time.Second),
+				setup.Sleep(240 * time.Second),
 				rm1.Signal(syscall.SIGUSR1),
 				setup.Sleep(time.Second),
 				rm2.Signal(syscall.SIGUSR1),
 				setup.Sleep(time.Second),
 				rm3.Signal(syscall.SIGUSR1),
-				setup.Sleep(30 * time.Second),
+				setup.Sleep(60 * time.Second),
 			}),
 		),
 	})
-	log.Println(h.Run(setup, prog))
+	log.Println(he.Run(setup, prog))
 }
