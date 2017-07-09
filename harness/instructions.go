@@ -550,11 +550,11 @@ func (cmdw *CommandWait) Exec(l *log.Logger) error {
 	defer l.SetPrefix(parentPrefix)
 	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cmdw))
 	l.Print("Waiting for process end...")
+	cmdw.readersWG.Wait()
 	if err := cmdw.cmd.Wait(); err != nil {
 		l.Printf("Error encountered: %v", err)
 		return err
 	}
-	cmdw.readersWG.Wait()
 	cmdw.cmd = nil
 	cmdw.stdout = nil
 	cmdw.stderr = nil
