@@ -1,4 +1,4 @@
-package tests
+package harness
 
 import (
 	"encoding/binary"
@@ -63,14 +63,6 @@ type TestHelper struct {
 	RootName      string
 }
 
-type TestHelperTxnResult uint8
-
-const Abort TestHelperTxnResult = iota
-
-func (self TestHelperTxnResult) Error() string {
-	return "Abort"
-}
-
 type TestTAdaptor struct {
 	log.Logger
 	*testing.T
@@ -91,37 +83,35 @@ func NewTestHelper(t *testing.T) *TestHelper {
 
 func NewHelper(t TestInterface) *TestHelper {
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	clusterHostsStr := os.Getenv("GOSHAWKDB_CLUSTER_HOSTS")
-	if len(clusterHostsStr) == 0 {
-		clusterHostsStr = defaultClusterHosts
-	}
-	clusterHosts := strings.Split(clusterHostsStr, ",")
-	clusterCertPath := os.Getenv("GOSHAWKDB_CLUSTER_CERT")
+
+	env := BuildTestEnv()
+	clusterHosts := strings.Split(env.EnsureEnv(ClusterHosts, defaultClusterHosts), ",")
+
 	var clusterCert []byte
+	clusterCertPath := env[ClusterCert]
 	if len(clusterCertPath) == 0 {
 		clusterCert = []byte(defaultClusterCert)
 	} else {
-		if contents, err := ioutil.ReadFile(clusterCertPath); err != nil {
-			t.Fatal("msg", "Error when loading the cluster cert from env var.", "envVar", clusterCertPath, "error", err)
-		} else {
+		if contents, err := ioutil.ReadFile(clusterCertPath); err == nil {
 			clusterCert = contents
+		} else {
+			t.Fatal("msg", "Error when loading the cluster cert from env var.", "envVar", clusterCertPath, "error", err)
 		}
 	}
+
 	var clientKeyPair []byte
-	clientKeyPairPath := os.Getenv("GOSHAWKDB_CLIENT_KEYPAIR")
+	clientKeyPairPath := env[ClientKeyPair]
 	if len(clientKeyPairPath) == 0 {
 		clientKeyPair = []byte(defaultClientKeyPair)
 	} else {
-		if contents, err := ioutil.ReadFile(clientKeyPairPath); err != nil {
-			t.Fatal("msg", "Error when loading the client key pair from env var.", "envVar", clientKeyPairPath, "error", err)
-		} else {
+		if contents, err := ioutil.ReadFile(clientKeyPairPath); err == nil {
 			clientKeyPair = contents
+		} else {
+			t.Fatal("msg", "Error when loading the client key pair from env var.", "envVar", clientKeyPairPath, "error", err)
 		}
 	}
-	rootName := os.Getenv("GOSHAWKDB_ROOT_NAME")
-	if rootName == "" {
-		rootName = defaultRootName
-	}
+	rootName := env.EnsureEnv(RootName, defaultRootName)
+
 	return &TestHelper{
 		TestInterface: t,
 		ClusterHosts:  clusterHosts,

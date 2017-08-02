@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	"goshawkdb.io/tests"
-	"goshawkdb.io/tests/parcount"
+	"goshawkdb.io/tests/harness"
+	"goshawkdb.io/tests/integration/parcount"
 	"time"
 )
 
 func main() {
 	then := time.Now()
-	parcount.ParCount(tests.NewMainHelper())
+	parcount.ParCount(harness.NewMainHelper())
 	fmt.Printf("\nTotal Parcount: %v\n", time.Now().Sub(then))
 }

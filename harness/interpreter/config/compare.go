@@ -6,13 +6,13 @@ import (
 	"goshawkdb.io/client"
 	"goshawkdb.io/server"
 	"goshawkdb.io/server/configuration"
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"log"
 )
 
 func CompareConfigs(host string, provided *configuration.ConfigurationJSON) (bool, error) {
 	// we just use TestHelper to grab certs from the env
-	th := tests.NewTestHelper(nil)
+	th := harness.NewMainHelper()
 
 	c, err := client.NewConnection(host, th.ClientKeyPair, th.ClusterCert)
 	if err != nil {

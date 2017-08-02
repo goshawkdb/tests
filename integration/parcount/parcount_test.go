@@ -1,10 +1,10 @@
 package parcount
 
 import (
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"testing"
 )
 
 func TestParCount(t *testing.T) {
-	ParCount(tests.NewTestHelper(t))
+	ParCount(harness.NewTestHelper(t))
 }

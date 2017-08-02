@@ -4,11 +4,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"goshawkdb.io/client"
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 )
 
 // We have one client, and it counts from 0 to 1000
-func SoloCount(th *tests.TestHelper) {
+func SoloCount(th *harness.TestHelper) {
 	c := th.CreateConnections(1)[0]
 	limit := uint64(1000)
 
