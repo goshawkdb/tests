@@ -3,14 +3,15 @@ package tests
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/go-kit/kit/log"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
 	"io/ioutil"
-	"log"
 	"os"
 	"runtime"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 )
 
@@ -49,10 +50,8 @@ uYe5KPLwvAklFGOj0YmrsoPpmawr0/2xeA==
 )
 
 type TestInterface interface {
-	Fatal(...interface{})
-	Fatalf(string, ...interface{})
-	Log(...interface{})
-	Logf(string, ...interface{})
+	log.Logger
+	Fatal(keyvals ...interface{})
 }
 
 type TestHelper struct {
@@ -72,12 +71,26 @@ func (self TestHelperTxnResult) Error() string {
 	return "Abort"
 }
 
-func NewTestHelper(t TestInterface) *TestHelper {
-	if t == nil {
-		t = defaultTestInterface
-	}
+type TestTAdaptor struct {
+	log.Logger
+	*testing.T
+}
+
+func NewMainHelper() *TestHelper {
+	return NewHelper(newDefaultTestInterface())
+}
+
+func NewTestHelper(t *testing.T) *TestHelper {
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
+	return NewHelper(&TestTAdaptor{
+		Logger: logger,
+		T:      t,
+	})
+}
+
+func NewHelper(t TestInterface) *TestHelper {
 	runtime.GOMAXPROCS(runtime.NumCPU())
-	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
 	clusterHostsStr := os.Getenv("GOSHAWKDB_CLUSTER_HOSTS")
 	if len(clusterHostsStr) == 0 {
 		clusterHostsStr = defaultClusterHosts
@@ -89,7 +102,7 @@ func NewTestHelper(t TestInterface) *TestHelper {
 		clusterCert = []byte(defaultClusterCert)
 	} else {
 		if contents, err := ioutil.ReadFile(clusterCertPath); err != nil {
-			t.Fatal(fmt.Sprintf("Error when loading the cluster cert from env var ('%s'): %v", clusterCertPath, err))
+			t.Fatal("msg", "Error when loading the cluster cert from env var.", "envVar", clusterCertPath, "error", err)
 		} else {
 			clusterCert = contents
 		}
@@ -100,7 +113,7 @@ func NewTestHelper(t TestInterface) *TestHelper {
 		clientKeyPair = []byte(defaultClientKeyPair)
 	} else {
 		if contents, err := ioutil.ReadFile(clientKeyPairPath); err != nil {
-			t.Fatal(fmt.Sprintf("Error when loading the client key pair from env var ('%s'): %v", clientKeyPairPath, err))
+			t.Fatal("msg", "Error when loading the client key pair from env var.", "envVar", clientKeyPairPath, "error", err)
 		} else {
 			clientKeyPair = contents
 		}
@@ -120,38 +133,35 @@ func NewTestHelper(t TestInterface) *TestHelper {
 
 func (th *TestHelper) MaybeFatal(err error) error {
 	if err != nil {
-		th.Fatal(err)
+		th.Fatal("error", err)
 	}
 	return err
 }
 
 func (th *TestHelper) CreateConnections(num int) []*Connection {
+	offset := len(th.connections)
 	results := make([]*Connection, num)
 	for i := 0; i < num; i++ {
 		host := th.ClusterHosts[i%len(th.ClusterHosts)]
-		conn, err := client.NewConnection(host, th.ClientKeyPair, th.ClusterCert)
-		if err != nil {
-			th.Fatal(err)
-		}
+		logger := log.With(th.TestInterface, "conn", offset+i)
+		conn, err := client.NewConnection(host, th.ClientKeyPair, th.ClusterCert, logger)
+		th.MaybeFatal(err)
 		results[i] = &Connection{
 			TestHelper:              th,
+			Logger:                  logger,
 			Connection:              conn,
-			connIdx:                 i,
+			connIdx:                 offset + i,
 			submissionCount:         0,
 			totalSubmissionDuration: time.Duration(0),
 		}
 	}
-	if len(th.connections) == 0 {
-		th.connections = results
-	} else {
-		th.connections = append(th.connections, results...)
-	}
+	th.connections = append(th.connections, results...)
 	return results
 }
 
 func (th *TestHelper) Shutdown() {
 	for _, c := range th.connections {
-		th.Logf("Average submission time: %v (%v submissions)", c.AvgSubmissionTime(), c.submissionCount)
+		c.Log("AverageSubmissionTime", c.AvgSubmissionTime(), "SubmissionsCount", c.submissionCount)
 		c.Connection.Shutdown()
 	}
 }
@@ -187,6 +197,7 @@ func (th *TestHelper) GetRootObject(txn *client.Txn) (client.ObjectRef, error) {
 
 type Connection struct {
 	*TestHelper
+	log.Logger
 	*client.Connection
 	connIdx                 int
 	submissionCount         int
@@ -194,9 +205,11 @@ type Connection struct {
 }
 
 func (conn *Connection) RunTransaction(fun func(*client.Txn) (interface{}, error)) (interface{}, *common.TxnId, error) {
-	fmt.Printf("%x", conn.connIdx)
 	result, stats, err := conn.Connection.RunTransaction(fun)
 	conn.submissionCount += len(stats.Submissions)
+	if conn.submissionCount > 0 && conn.submissionCount%64 == 0 {
+		conn.Log("submissionCount", conn.submissionCount)
+	}
 	for _, s := range stats.Submissions {
 		conn.totalSubmissionDuration += s
 	}
@@ -277,22 +290,21 @@ func (conn *Connection) AvgSubmissionTime() time.Duration {
 	}
 }
 
-var defaultTestInterface = &mainTest{}
-
-type mainTest struct{}
-
-func (mt *mainTest) Fatal(args ...interface{}) {
-	log.Fatal(args...)
+func newDefaultTestInterface() *mainTest {
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
+	return &mainTest{
+		Logger: logger,
+	}
 }
 
-func (mt *mainTest) Fatalf(format string, args ...interface{}) {
-	log.Fatalf(format, args...)
+type mainTest struct {
+	log.Logger
 }
 
-func (mt *mainTest) Log(args ...interface{}) {
-	log.Print(args...)
-}
-
-func (mt *mainTest) Logf(format string, args ...interface{}) {
-	log.Printf(format, args...)
+func (mt *mainTest) Fatal(keyvals ...interface{}) {
+	if len(keyvals) != 0 {
+		mt.Log(keyvals...)
+	}
+	os.Exit(1)
 }

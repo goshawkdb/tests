@@ -597,7 +597,9 @@ func runScenarios(he *h.HarnessEnv, scenarios ...*ClusterChange) {
 
 func main() {
 	he := h.BuildHarnessEnv()
-	runScenarios(he, AddToClusterScenarios()...)
-	runScenarios(he, RemoveFromClusterScenarios()...)
-	runScenarios(he, ReplaceInClusterScenarios()...)
+	for {
+		runScenarios(he, AddToClusterScenarios()...)
+		runScenarios(he, RemoveFromClusterScenarios()...)
+		runScenarios(he, ReplaceInClusterScenarios()...)
+	}
 }

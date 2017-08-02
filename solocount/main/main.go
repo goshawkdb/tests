@@ -6,5 +6,5 @@ import (
 )
 
 func main() {
-	solocount.SoloCount(tests.NewTestHelper(nil))
+	solocount.SoloCount(tests.NewMainHelper())
 }

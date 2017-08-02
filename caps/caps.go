@@ -60,7 +60,7 @@ func attemptRead(c *tests.Connection, refsLen, refsIdx int, refCap, objCap clien
 		c.Fatal(err)
 	} else if canRead {
 		if bites, ok := result.([]byte); !ok || !bytes.Equal(bites, value) {
-			c.Fatalf("Expected to read value %v but read %v", value, bites)
+			c.Fatal("error", "Unexpected read.", "read", bites, "expected", value)
 		}
 	}
 }

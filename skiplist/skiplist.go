@@ -5,7 +5,6 @@ import (
 	"goshawkdb.io/client"
 	"goshawkdb.io/tests"
 	sk "goshawkdb.io/tests/skiplist/skiplist"
-	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -86,7 +85,7 @@ func InsertAndGetManyOrdered(th *tests.TestHelper) {
 
 	sl := createSkipList(conn)
 	for idx := 0; idx < 512; idx++ {
-		log.Println(idx)
+		conn.Log("idx", idx)
 		//time.Sleep(15 * time.Millisecond)
 		key, value := make([]byte, 8), make([]byte, 8)
 		binary.BigEndian.PutUint64(key, uint64(idx))
@@ -107,7 +106,7 @@ func InsertAndGetManyPermutation(th *tests.TestHelper) {
 
 	sl := createSkipList(conn)
 	for idx, num := range keys {
-		log.Printf("%v (%v)\n", idx, num)
+		conn.Log(idx, num)
 		//time.Sleep(15 * time.Millisecond)
 		key, value := make([]byte, 8), make([]byte, 8)
 		binary.BigEndian.PutUint64(key, uint64(num))
@@ -153,7 +152,7 @@ func InsertAndGetManyPar(th *tests.TestHelper) {
 			if slRootObj.ReferencesSameAs(sl.ObjRef) {
 				return slRootObj, nil
 			} else {
-				th.Log("retrying", sl.ObjRef, "!=", slRootObj)
+				conn.Log("msg", "retrying due to unequal roots.", "a", sl.ObjRef, "b", slRootObj)
 				return client.Retry, nil
 			}
 		})
@@ -163,7 +162,7 @@ func InsertAndGetManyPar(th *tests.TestHelper) {
 		slCopy := sk.SkipListFromObjRef(conn.Connection, rng, objRef.(client.ObjectRef))
 		key, value := make([]byte, 8), make([]byte, 8)
 		for idx := connIdx; idx < limit; idx = idx + par {
-			log.Println(connIdx, idx)
+			conn.Log(connIdx, idx)
 			//time.Sleep(15 * time.Millisecond)
 			binary.BigEndian.PutUint64(key, uint64(idx))
 			binary.BigEndian.PutUint64(value, uint64(idx*idx))
@@ -215,7 +214,7 @@ func InsertAndGetManyParPermutation(th *tests.TestHelper) {
 			if slRootObj.ReferencesSameAs(sl.ObjRef) {
 				return slRootObj, nil
 			} else {
-				th.Log("retrying", sl.ObjRef, "!=", slRootObj)
+				conn.Log("msg", "retrying due to unequal roots.", "a", sl.ObjRef, "b", slRootObj)
 				return client.Retry, nil
 			}
 		})
@@ -227,7 +226,7 @@ func InsertAndGetManyParPermutation(th *tests.TestHelper) {
 		key, value := make([]byte, 8), make([]byte, 8)
 		for idx, base := range keys {
 			num := base*par + connIdx
-			log.Printf("%v %v (%v)\n", connIdx, idx, num)
+			conn.Log(connIdx, idx, "num", num)
 			//time.Sleep(15 * time.Millisecond)
 			binary.BigEndian.PutUint64(key, uint64(num))
 			binary.BigEndian.PutUint64(value, uint64(num*num))

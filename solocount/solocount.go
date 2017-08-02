@@ -46,7 +46,7 @@ func SoloCount(th *tests.TestHelper) {
 	}
 	for n := uint64(0); n < limit; n++ {
 		if !encountered[n] {
-			th.Fatal("Failed to encounter", n)
+			th.Fatal("error", fmt.Errorf("Failed to encounter: %d", n))
 		}
 	}
 }

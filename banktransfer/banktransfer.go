@@ -95,7 +95,7 @@ func observeTotalWealth(conn *tests.Connection, totalWealth uint64, terminate ch
 		if foundWealth != totalWealth {
 			conn.Fatal("FoundWealth != TotalWealth:", foundWealth, totalWealth)
 		} else {
-			conn.Log(foundWealth)
+			conn.Log("wealth", foundWealth)
 		}
 	}
 }
@@ -108,6 +108,8 @@ func runTransfers(accounts int, conn *tests.Connection, rootVsn *common.TxnId, t
 		return err
 	}
 	startBarrier.Wait()
+	conn.Log("transferer", "starting")
+	defer conn.Log("transferer", "finished")
 	for ; transferCount > 0; transferCount-- {
 		time.Sleep(50 * time.Millisecond)
 		from := rng.Intn(accounts)
