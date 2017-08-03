@@ -1,34 +1,34 @@
 package skiplist
 
 import (
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"testing"
 )
 
 func TestCreate(t *testing.T) {
-	Create(tests.NewTestHelper(t))
+	Create(harness.NewTestHelper(t))
 }
 
 func TestInsert(t *testing.T) {
-	Insert(tests.NewTestHelper(t))
+	Insert(harness.NewTestHelper(t))
 }
 
 func TestInsertAndGet(t *testing.T) {
-	InsertAndGet(tests.NewTestHelper(t))
+	InsertAndGet(harness.NewTestHelper(t))
 }
 
 func TestInsertAndGetManyOrdered(t *testing.T) {
-	InsertAndGetManyOrdered(tests.NewTestHelper(t))
+	InsertAndGetManyOrdered(harness.NewTestHelper(t))
 }
 
 func TestInsertAndGetManyPermutation(t *testing.T) {
-	InsertAndGetManyPermutation(tests.NewTestHelper(t))
+	InsertAndGetManyPermutation(harness.NewTestHelper(t))
 }
 
 func TestInsertAndGetManyPar(t *testing.T) {
-	InsertAndGetManyPar(tests.NewTestHelper(t))
+	InsertAndGetManyPar(harness.NewTestHelper(t))
 }
 
 func TestInsertAndGetManyParPermutation(t *testing.T) {
-	InsertAndGetManyParPermutation(tests.NewTestHelper(t))
+	InsertAndGetManyParPermutation(harness.NewTestHelper(t))
 }

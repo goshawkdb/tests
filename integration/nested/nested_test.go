@@ -1,26 +1,26 @@
 package nested
 
 import (
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"testing"
 )
 
 func TestNestedRead(t *testing.T) {
-	NestedRead(tests.NewTestHelper(t))
+	NestedRead(harness.NewTestHelper(t))
 }
 
 func TestNestedWrite(t *testing.T) {
-	NestedWrite(tests.NewTestHelper(t))
+	NestedWrite(harness.NewTestHelper(t))
 }
 
 func TestNestedInnerAbort(t *testing.T) {
-	NestedInnerAbort(tests.NewTestHelper(t))
+	NestedInnerAbort(harness.NewTestHelper(t))
 }
 
 func TestNestedInnerRetry(t *testing.T) {
-	NestedInnerRetry(tests.NewTestHelper(t))
+	NestedInnerRetry(harness.NewTestHelper(t))
 }
 
 func TestNestedInnerCreate(t *testing.T) {
-	NestedInnerCreate(tests.NewTestHelper(t))
+	NestedInnerCreate(harness.NewTestHelper(t))
 }

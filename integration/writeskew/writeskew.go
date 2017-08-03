@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"sync"
 )
 
 // This tests for the A5B write skew anomaly.
-func WriteSkew(th *tests.TestHelper) {
+func WriteSkew(th *harness.TestHelper) {
 	parIncrs := 8
 	parReset := 4
 	iterations := 500
@@ -22,7 +22,7 @@ func WriteSkew(th *tests.TestHelper) {
 
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(parIncrs + parReset)
-	endBarrierIncrs, errChIncrs := th.InParallel(parIncrs, func(connIdx int, conn *tests.Connection) error {
+	endBarrierIncrs, errChIncrs := th.InParallel(parIncrs, func(connIdx int, conn *harness.Connection) error {
 		return incr(connIdx, conn, rootVsn, iterations, startBarrier)
 	})
 
@@ -31,7 +31,7 @@ func WriteSkew(th *tests.TestHelper) {
 		close(errChIncrs)
 	}()
 
-	endBarrierReset, errChReset := th.InParallel(parReset, func(connIdx int, conn *tests.Connection) error {
+	endBarrierReset, errChReset := th.InParallel(parReset, func(connIdx int, conn *harness.Connection) error {
 		return reset(conn, rootVsn, startBarrier, errChIncrs)
 	})
 
@@ -43,7 +43,7 @@ func WriteSkew(th *tests.TestHelper) {
 	th.MaybeFatal(<-errChReset)
 }
 
-func incr(connNum int, conn *tests.Connection, rootVsn *common.TxnId, itrs int, startBarrier *sync.WaitGroup) error {
+func incr(connNum int, conn *harness.Connection, rootVsn *common.TxnId, itrs int, startBarrier *sync.WaitGroup) error {
 	err := conn.AwaitRootVersionChange(rootVsn)
 	startBarrier.Done()
 	if err != nil {
@@ -93,7 +93,7 @@ func incr(connNum int, conn *tests.Connection, rootVsn *common.TxnId, itrs int, 
 	return nil
 }
 
-func reset(conn *tests.Connection, rootVsn *common.TxnId, startBarrier *sync.WaitGroup, terminate chan error) error {
+func reset(conn *harness.Connection, rootVsn *common.TxnId, startBarrier *sync.WaitGroup, terminate chan error) error {
 	err := conn.AwaitRootVersionChange(rootVsn)
 	startBarrier.Done()
 	if err != nil {

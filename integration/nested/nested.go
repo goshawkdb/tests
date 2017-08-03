@@ -3,12 +3,12 @@ package nested
 import (
 	"fmt"
 	"goshawkdb.io/client"
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"sync"
 	"time"
 )
 
-func NestedRead(th *tests.TestHelper) {
+func NestedRead(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
@@ -58,7 +58,7 @@ func NestedRead(th *tests.TestHelper) {
 	}
 }
 
-func NestedWrite(th *tests.TestHelper) {
+func NestedWrite(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
@@ -133,7 +133,7 @@ func NestedWrite(th *tests.TestHelper) {
 	th.MaybeFatal(err)
 }
 
-func NestedInnerAbort(th *tests.TestHelper) {
+func NestedInnerAbort(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
@@ -178,10 +178,10 @@ func NestedInnerAbort(th *tests.TestHelper) {
 				if err = rootObj2.Set([]byte("inner")); err != nil {
 					return nil, err
 				}
-				return nil, tests.Abort
+				return nil, harness.Abort
 			})
-			if err != tests.Abort {
-				return nil, fmt.Errorf("Expected to get tests.Abort returned, but actually got %#v", err)
+			if err != harness.Abort {
+				return nil, fmt.Errorf("Expected to get harness.Abort returned, but actually got %#v", err)
 			}
 			val, err = rootObj1.Value()
 			if err != nil {
@@ -207,7 +207,7 @@ func NestedInnerAbort(th *tests.TestHelper) {
 	th.MaybeFatal(err)
 }
 
-func NestedInnerRetry(th *tests.TestHelper) {
+func NestedInnerRetry(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
@@ -220,7 +220,7 @@ func NestedInnerRetry(th *tests.TestHelper) {
 	b1.Add(1)
 	b2.Add(1)
 
-	endBarrier, errCh := th.InParallel(1, func(connIdx int, conn *tests.Connection) error {
+	endBarrier, errCh := th.InParallel(1, func(connIdx int, conn *harness.Connection) error {
 		if err := conn.AwaitRootVersionChange(rootVsn); err != nil {
 			return err
 		}
@@ -270,7 +270,7 @@ func NestedInnerRetry(th *tests.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func NestedInnerCreate(th *tests.TestHelper) {
+func NestedInnerCreate(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 

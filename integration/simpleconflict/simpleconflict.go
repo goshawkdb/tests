@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"sync"
 )
 
-func SimpleConflict(th *tests.TestHelper) {
+func SimpleConflict(th *harness.TestHelper) {
 	parCount := 5
 	objCount := 3
 	limit := uint64(1000)
@@ -19,7 +19,7 @@ func SimpleConflict(th *tests.TestHelper) {
 	vsn, _ := conn.SetRootToNZeroObjs(objCount)
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(parCount)
-	endBarrier, errCh := th.InParallel(parCount, func(idx int, conn *tests.Connection) error {
+	endBarrier, errCh := th.InParallel(parCount, func(idx int, conn *harness.Connection) error {
 		return runConflictCount(idx, conn, vsn, limit, startBarrier)
 	})
 	go func() {
@@ -29,7 +29,7 @@ func SimpleConflict(th *tests.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func runConflictCount(connIdx int, conn *tests.Connection, rootVsn *common.TxnId, limit uint64, startBarrier *sync.WaitGroup) error {
+func runConflictCount(connIdx int, conn *harness.Connection, rootVsn *common.TxnId, limit uint64, startBarrier *sync.WaitGroup) error {
 	err := conn.AwaitRootVersionChange(rootVsn)
 	startBarrier.Done()
 	if err != nil {

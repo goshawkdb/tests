@@ -28,7 +28,13 @@ const (
 	GoPath                   = "GOPATH"
 )
 
-func BuildTestEnv() TestEnv {
+var environment = buildTestEnv()
+
+func GetTestEnv() TestEnv {
+	return environment.Clone()
+}
+
+func buildTestEnv() TestEnv {
 	envMap := extractFromEnv(
 		GoshawkDB,
 		ClusterConfig,
@@ -76,4 +82,12 @@ func (te TestEnv) EnsureEnv(key ConfigKey, value string) string {
 		te[key] = value
 		return value
 	}
+}
+
+func (te TestEnv) Clone() TestEnv {
+	result := make(map[ConfigKey]string, len(te))
+	for k, v := range te {
+		result[k] = v
+	}
+	return result
 }

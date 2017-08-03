@@ -4,14 +4,14 @@ import (
 	"encoding/binary"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"math/rand"
 	"sync"
 	"time"
 )
 
 // This is essentially testing for the A6 phantom anomaly.
-func BankTransfer(th *tests.TestHelper) {
+func BankTransfer(th *harness.TestHelper) {
 	accounts := 20
 	transfers := 2000
 	initialWealth := uint64(1000)
@@ -45,7 +45,7 @@ func BankTransfer(th *tests.TestHelper) {
 
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(parTransfers)
-	endBarrier, errCh := th.InParallel(parTransfers, func(connIdx int, conn *tests.Connection) error {
+	endBarrier, errCh := th.InParallel(parTransfers, func(connIdx int, conn *harness.Connection) error {
 		return runTransfers(accounts, conn, vsn, transfers, totalWealth, startBarrier)
 	})
 
@@ -63,7 +63,7 @@ func BankTransfer(th *tests.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func observeTotalWealth(conn *tests.Connection, totalWealth uint64, terminate chan struct{}) {
+func observeTotalWealth(conn *harness.Connection, totalWealth uint64, terminate chan struct{}) {
 	for {
 		select {
 		case <-terminate:
@@ -100,7 +100,7 @@ func observeTotalWealth(conn *tests.Connection, totalWealth uint64, terminate ch
 	}
 }
 
-func runTransfers(accounts int, conn *tests.Connection, rootVsn *common.TxnId, transferCount int, totalWealth uint64, startBarrier *sync.WaitGroup) error {
+func runTransfers(accounts int, conn *harness.Connection, rootVsn *common.TxnId, transferCount int, totalWealth uint64, startBarrier *sync.WaitGroup) error {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	err := conn.AwaitRootVersionChange(rootVsn)
 	startBarrier.Done()

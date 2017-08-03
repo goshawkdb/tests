@@ -2,21 +2,21 @@ package main
 
 import (
 	"fmt"
-	"goshawkdb.io/tests"
-	"goshawkdb.io/tests/skiplist"
+	"goshawkdb.io/tests/harness"
+	"goshawkdb.io/tests/integration/skiplist"
 	"time"
 )
 
 func main() {
 	then := time.Now()
-	skiplist.InsertAndGetManyOrdered(tests.NewMainHelper())
+	skiplist.InsertAndGetManyOrdered(harness.NewMainHelper())
 	fmt.Printf("\nTotal Ordered: %v\n", time.Now().Sub(then))
 
 	then = time.Now()
-	skiplist.InsertAndGetManyPermutation(tests.NewMainHelper())
+	skiplist.InsertAndGetManyPermutation(harness.NewMainHelper())
 	fmt.Printf("\nTotal Permutation: %v\n", time.Now().Sub(then))
 
 	then = time.Now()
-	skiplist.InsertAndGetManyPar(tests.NewMainHelper())
+	skiplist.InsertAndGetManyPar(harness.NewMainHelper())
 	fmt.Printf("\nTotal Parallel: %v\n", time.Now().Sub(then))
 }

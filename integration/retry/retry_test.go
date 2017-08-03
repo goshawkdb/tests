@@ -1,7 +1,7 @@
 package retry
 
 import (
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"testing"
 )
 
@@ -14,10 +14,10 @@ func TestLoop(t *testing.T) {
 
 // Test that one write wakes up many retriers
 func TestSimpleRetry(t *testing.T) {
-	SimpleRetry(tests.NewTestHelper(t))
+	SimpleRetry(harness.NewTestHelper(t))
 }
 
 // Test that a retry on several objs gets restarted by one write.
 func TestDisjointRetry(t *testing.T) {
-	DisjointRetry(tests.NewTestHelper(t))
+	DisjointRetry(harness.NewTestHelper(t))
 }

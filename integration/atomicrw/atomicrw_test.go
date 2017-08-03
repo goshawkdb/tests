@@ -1,7 +1,7 @@
 package atomicrw
 
 import (
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"testing"
 )
 
@@ -12,5 +12,5 @@ import (
 // Thus the only way that x goes odd is the first branch of t1. So if
 // we observe an odd x, then we must have x == y
 func TestAtomicRW(t *testing.T) {
-	AtomicRW(tests.NewTestHelper(t))
+	AtomicRW(harness.NewTestHelper(t))
 }

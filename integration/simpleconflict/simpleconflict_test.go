@@ -1,10 +1,10 @@
 package simpleconflict
 
 import (
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"testing"
 )
 
 func TestSimpleConflict(t *testing.T) {
-	SimpleConflict(tests.NewTestHelper(t))
+	SimpleConflict(harness.NewTestHelper(t))
 }

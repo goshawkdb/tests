@@ -84,7 +84,7 @@ func NewTestHelper(t *testing.T) *TestHelper {
 func NewHelper(t TestInterface) *TestHelper {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	env := BuildTestEnv()
+	env := GetTestEnv()
 	clusterHosts := strings.Split(env.EnsureEnv(ClusterHosts, defaultClusterHosts), ",")
 
 	var clusterCert []byte

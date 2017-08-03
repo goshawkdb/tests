@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"sync"
 	"time"
 )
@@ -15,7 +15,7 @@ import (
 // t2: if x%2 == 0 then {y = x+2} else {x = x+1}
 // Thus the only way that x goes odd is the first branch of t1. So if
 // we observe an odd x, then we must have x == y
-func AtomicRW(th *tests.TestHelper) {
+func AtomicRW(th *harness.TestHelper) {
 	attempts := 10000
 
 	conns := 4
@@ -28,7 +28,7 @@ func AtomicRW(th *tests.TestHelper) {
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(conns)
 
-	endBarrier, errCh := th.InParallel(conns, func(connIdx int, conn *tests.Connection) error {
+	endBarrier, errCh := th.InParallel(conns, func(connIdx int, conn *harness.Connection) error {
 		return runTxn(conn, vsn, attempts, startBarrier)
 	})
 
@@ -45,7 +45,7 @@ func AtomicRW(th *tests.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func runTxn(conn *tests.Connection, rootVsn *common.TxnId, attempts int, startBarrier *sync.WaitGroup) error {
+func runTxn(conn *harness.Connection, rootVsn *common.TxnId, attempts int, startBarrier *sync.WaitGroup) error {
 	err := conn.AwaitRootVersionChange(rootVsn)
 	startBarrier.Done()
 	if err != nil {
@@ -118,7 +118,7 @@ func runTxn(conn *tests.Connection, rootVsn *common.TxnId, attempts int, startBa
 	return nil
 }
 
-func runObserver(conn *tests.Connection, terminate chan struct{}) {
+func runObserver(conn *harness.Connection, terminate chan struct{}) {
 	var x, y uint64
 	for {
 		select {

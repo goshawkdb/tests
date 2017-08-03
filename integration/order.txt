@@ -9,3 +9,4 @@ writeskew
 atomicrw
 strongserializable
 skiplist
+pqueue

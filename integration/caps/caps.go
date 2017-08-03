@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"goshawkdb.io/client"
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 )
 
-func createObjOffRoot(c *tests.Connection, cap client.Capability, value []byte) {
+func createObjOffRoot(c *harness.Connection, cap client.Capability, value []byte) {
 	_, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		root, err := c.GetRootObject(txn)
 		if err != nil {
@@ -24,7 +24,7 @@ func createObjOffRoot(c *tests.Connection, cap client.Capability, value []byte) 
 	}
 }
 
-func attemptRead(c *tests.Connection, refsLen, refsIdx int, refCap, objCap client.Capability, value []byte) {
+func attemptRead(c *harness.Connection, refsLen, refsIdx int, refCap, objCap client.Capability, value []byte) {
 	canRead := objCap == client.Read || objCap == client.ReadWrite
 	result, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		root, err := c.GetRootObject(txn)
@@ -65,7 +65,7 @@ func attemptRead(c *tests.Connection, refsLen, refsIdx int, refCap, objCap clien
 	}
 }
 
-func attemptWrite(c *tests.Connection, refsLen, refsIdx int, refCap, objCap client.Capability, value []byte) {
+func attemptWrite(c *harness.Connection, refsLen, refsIdx int, refCap, objCap client.Capability, value []byte) {
 	canWrite := objCap == client.Write || objCap == client.ReadWrite
 	_, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		root, err := c.GetRootObject(txn)
@@ -102,7 +102,7 @@ func attemptWrite(c *tests.Connection, refsLen, refsIdx int, refCap, objCap clie
 	}
 }
 
-func none(th *tests.TestHelper) {
+func none(th *harness.TestHelper) {
 	defer th.Shutdown()
 	conns := th.CreateConnections(2)
 	c1, c2 := conns[0], conns[1]
@@ -115,7 +115,7 @@ func none(th *tests.TestHelper) {
 	attemptWrite(c2, 1, 0, client.None, client.None, []byte("illegal"))
 }
 
-func readOnly(th *tests.TestHelper) {
+func readOnly(th *harness.TestHelper) {
 	defer th.Shutdown()
 	conns := th.CreateConnections(2)
 	c1, c2 := conns[0], conns[1]
@@ -128,7 +128,7 @@ func readOnly(th *tests.TestHelper) {
 	attemptWrite(c2, 1, 0, client.Read, client.Read, []byte("illegal"))
 }
 
-func writeOnly(th *tests.TestHelper) {
+func writeOnly(th *harness.TestHelper) {
 	defer th.Shutdown()
 	conns := th.CreateConnections(2)
 	c1, c2 := conns[0], conns[1]
@@ -144,7 +144,7 @@ func writeOnly(th *tests.TestHelper) {
 	attemptRead(c1, 1, 0, client.Write, client.ReadWrite, []byte("Goodbye World"))
 }
 
-func readWrite(th *tests.TestHelper) {
+func readWrite(th *harness.TestHelper) {
 	defer th.Shutdown()
 	conns := th.CreateConnections(2)
 	c1, c2 := conns[0], conns[1]
@@ -159,7 +159,7 @@ func readWrite(th *tests.TestHelper) {
 	attemptRead(c1, 1, 0, client.ReadWrite, client.ReadWrite, []byte("Goodbye World"))
 }
 
-func fakeRead(th *tests.TestHelper) {
+func fakeRead(th *harness.TestHelper) {
 	defer th.Shutdown()
 	conns := th.CreateConnections(2)
 	c1, c2 := conns[0], conns[1]
@@ -195,7 +195,7 @@ func fakeRead(th *tests.TestHelper) {
 	}
 }
 
-func fakeWrite(th *tests.TestHelper) {
+func fakeWrite(th *harness.TestHelper) {
 	defer th.Shutdown()
 	conns := th.CreateConnections(2)
 	c1, c2 := conns[0], conns[1]
@@ -231,7 +231,7 @@ func fakeWrite(th *tests.TestHelper) {
 	}
 }
 
-func capabilitiesCanGrowSingleTxn(th *tests.TestHelper) {
+func capabilitiesCanGrowSingleTxn(th *harness.TestHelper) {
 	defer th.Shutdown()
 	conns := th.CreateConnections(2)
 	c1, c2 := conns[0], conns[1]
@@ -273,7 +273,7 @@ func capabilitiesCanGrowSingleTxn(th *tests.TestHelper) {
 	attemptRead(c1, 2, 1, client.None, client.ReadWrite, []byte("Goodbye World"))
 }
 
-func capabilitiesCanGrowMultiTxn(th *tests.TestHelper) {
+func capabilitiesCanGrowMultiTxn(th *harness.TestHelper) {
 	defer th.Shutdown()
 	conns := th.CreateConnections(2)
 	c1, c2 := conns[0], conns[1]

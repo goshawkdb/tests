@@ -4,7 +4,7 @@ import (
 	"bytes"
 	capn "github.com/glycerine/go-capnproto"
 	"goshawkdb.io/client"
-	msgs "goshawkdb.io/tests/skiplist/skiplist/capnp"
+	msgs "goshawkdb.io/tests/integration/skiplist/skiplist/capnp"
 	// "log"
 	"fmt"
 	"math"

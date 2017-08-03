@@ -1,10 +1,10 @@
 package pqueue
 
 import (
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"testing"
 )
 
 func TestPQueue(t *testing.T) {
-	PQueue(tests.NewTestHelper(t))
+	PQueue(harness.NewTestHelper(t))
 }

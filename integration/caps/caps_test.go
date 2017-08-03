@@ -1,38 +1,38 @@
 package caps
 
 import (
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"testing"
 )
 
 func TestNone(t *testing.T) {
-	none(tests.NewTestHelper(t))
+	none(harness.NewTestHelper(t))
 }
 
 func TestReadOnly(t *testing.T) {
-	readOnly(tests.NewTestHelper(t))
+	readOnly(harness.NewTestHelper(t))
 }
 
 func TestWriteOnly(t *testing.T) {
-	writeOnly(tests.NewTestHelper(t))
+	writeOnly(harness.NewTestHelper(t))
 }
 
 func TestReadWrite(t *testing.T) {
-	readWrite(tests.NewTestHelper(t))
+	readWrite(harness.NewTestHelper(t))
 }
 
 func TestFakeRead(t *testing.T) {
-	fakeRead(tests.NewTestHelper(t))
+	fakeRead(harness.NewTestHelper(t))
 }
 
 func TestFakeWrite(t *testing.T) {
-	fakeWrite(tests.NewTestHelper(t))
+	fakeWrite(harness.NewTestHelper(t))
 }
 
 func TestCapabilitiesCanGrowSingleTxn(t *testing.T) {
-	capabilitiesCanGrowSingleTxn(tests.NewTestHelper(t))
+	capabilitiesCanGrowSingleTxn(harness.NewTestHelper(t))
 }
 
 func TestCapabilitiesCanGrowMultiTxn(t *testing.T) {
-	capabilitiesCanGrowMultiTxn(tests.NewTestHelper(t))
+	capabilitiesCanGrowMultiTxn(harness.NewTestHelper(t))
 }

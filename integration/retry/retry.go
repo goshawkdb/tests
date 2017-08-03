@@ -4,13 +4,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"goshawkdb.io/client"
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"sync"
 	"time"
 )
 
 // Test that one write wakes up many retriers
-func SimpleRetry(th *tests.TestHelper) {
+func SimpleRetry(th *harness.TestHelper) {
 	retriers := 9
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
@@ -20,7 +20,7 @@ func SimpleRetry(th *tests.TestHelper) {
 
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(retriers)
-	endBarrier, errCh := th.InParallel(retriers, func(connIdx int, conn *tests.Connection) error {
+	endBarrier, errCh := th.InParallel(retriers, func(connIdx int, conn *harness.Connection) error {
 		if err := conn.AwaitRootVersionChange(rootVsn); err != nil {
 			return err
 		}
@@ -79,7 +79,7 @@ func SimpleRetry(th *tests.TestHelper) {
 }
 
 // Test that a retry on several objs gets restarted by one write.
-func DisjointRetry(th *tests.TestHelper) {
+func DisjointRetry(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
@@ -91,7 +91,7 @@ func DisjointRetry(th *tests.TestHelper) {
 
 	changes := []bool{true, false, true}
 
-	endBarrier, errCh := th.InParallel(1, func(connIdx int, conn *tests.Connection) error {
+	endBarrier, errCh := th.InParallel(1, func(connIdx int, conn *harness.Connection) error {
 		if err := conn.AwaitRootVersionChange(rootVsn); err != nil {
 			return err
 		}

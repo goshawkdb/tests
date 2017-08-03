@@ -3,21 +3,21 @@ package skiplist
 import (
 	"encoding/binary"
 	"goshawkdb.io/client"
-	"goshawkdb.io/tests"
-	sk "goshawkdb.io/tests/skiplist/skiplist"
+	"goshawkdb.io/tests/harness"
+	sk "goshawkdb.io/tests/integration/skiplist/skiplist"
 	"math/rand"
 	"sync"
 	"time"
 )
 
-func Create(th *tests.TestHelper) {
+func Create(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
 	createSkipList(conn)
 }
 
-func Insert(th *tests.TestHelper) {
+func Insert(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
@@ -44,7 +44,7 @@ func Insert(th *tests.TestHelper) {
 	}
 }
 
-func InsertAndGet(th *tests.TestHelper) {
+func InsertAndGet(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
@@ -79,7 +79,7 @@ func InsertAndGet(th *tests.TestHelper) {
 	}
 }
 
-func InsertAndGetManyOrdered(th *tests.TestHelper) {
+func InsertAndGetManyOrdered(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
@@ -97,7 +97,7 @@ func InsertAndGetManyOrdered(th *tests.TestHelper) {
 	}
 }
 
-func InsertAndGetManyPermutation(th *tests.TestHelper) {
+func InsertAndGetManyPermutation(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
@@ -118,7 +118,7 @@ func InsertAndGetManyPermutation(th *tests.TestHelper) {
 	}
 }
 
-func InsertAndGetManyPar(th *tests.TestHelper) {
+func InsertAndGetManyPar(th *harness.TestHelper) {
 	par := 8
 	limit := 512
 	conn := th.CreateConnections(1)[0]
@@ -130,7 +130,7 @@ func InsertAndGetManyPar(th *tests.TestHelper) {
 	vsn, _ := conn.SetRootToZeroUInt64()
 	sl := createSkipList(conn)
 
-	endBarrier, errCh := th.InParallel(par, func(connIdx int, conn *tests.Connection) error {
+	endBarrier, errCh := th.InParallel(par, func(connIdx int, conn *harness.Connection) error {
 		err := conn.AwaitRootVersionChange(vsn)
 		startBarrier.Done()
 		if err != nil {
@@ -180,7 +180,7 @@ func InsertAndGetManyPar(th *tests.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func InsertAndGetManyParPermutation(th *tests.TestHelper) {
+func InsertAndGetManyParPermutation(th *harness.TestHelper) {
 	par := 4
 	limit := 512 / par
 	conn := th.CreateConnections(1)[0]
@@ -192,7 +192,7 @@ func InsertAndGetManyParPermutation(th *tests.TestHelper) {
 	vsn, _ := conn.SetRootToZeroUInt64()
 	sl := createSkipList(conn)
 
-	endBarrier, errCh := th.InParallel(par, func(connIdx int, conn *tests.Connection) error {
+	endBarrier, errCh := th.InParallel(par, func(connIdx int, conn *harness.Connection) error {
 		err := conn.AwaitRootVersionChange(vsn)
 		startBarrier.Done()
 		if err != nil {
@@ -244,7 +244,7 @@ func InsertAndGetManyParPermutation(th *tests.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func createSkipList(conn *tests.Connection) *sk.SkipList {
+func createSkipList(conn *harness.Connection) *sk.SkipList {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 	result, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		sl, err := sk.NewSkipList(conn.Connection, rng)

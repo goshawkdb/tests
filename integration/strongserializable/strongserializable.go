@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
-	"goshawkdb.io/tests"
+	"goshawkdb.io/tests/harness"
 	"sync"
 	"time"
 )
 
 // Careful, this one is quite timing sensitive - you want the number
 // of proposers/acceptors to stay very close to 0 (<10).
-func StrongSerializable(th *tests.TestHelper) {
+func StrongSerializable(th *harness.TestHelper) {
 	par := 3
 	iterations := 1000
 
@@ -22,7 +22,7 @@ func StrongSerializable(th *tests.TestHelper) {
 	vsn, _ := conn.SetRootToNZeroObjs(par + par)
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(par)
-	endBarrier, errCh := th.InParallel(par, func(connIdx int, conn *tests.Connection) error {
+	endBarrier, errCh := th.InParallel(par, func(connIdx int, conn *harness.Connection) error {
 		return runTest(connIdx, conn, vsn, iterations, startBarrier)
 	})
 	go func() {
@@ -32,7 +32,7 @@ func StrongSerializable(th *tests.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func runTest(connNum int, conn *tests.Connection, vsn *common.TxnId, iterations int, startBarrier *sync.WaitGroup) error {
+func runTest(connNum int, conn *harness.Connection, vsn *common.TxnId, iterations int, startBarrier *sync.WaitGroup) error {
 	err := conn.AwaitRootVersionChange(vsn)
 	startBarrier.Done()
 	if err != nil {
