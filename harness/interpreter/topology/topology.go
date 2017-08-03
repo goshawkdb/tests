@@ -3,7 +3,7 @@ package topology
 import (
 	"fmt"
 	config "goshawkdb.io/server/configuration"
-	h "goshawkdb.io/tests/harness"
+	"goshawkdb.io/tests/harness/interpreter"
 	"syscall"
 	"time"
 )
@@ -17,16 +17,16 @@ func (pf *PortsAndF) String() string {
 	return fmt.Sprintf("{Ports: %v, F: %v}", pf.Ports, pf.F)
 }
 
-func TopologyChange(before, after *PortsAndF, setup *h.Setup) []h.Instruction {
+func TopologyChange(before, after *PortsAndF, setup *interpreter.Setup) []interpreter.Instruction {
 	beforePorts := make(map[uint16]bool, len(before.Ports))
 	afterPorts := make(map[uint16]bool, len(after.Ports))
 
 	beforeHosts := make([]string, 0, len(before.Ports))
 	afterHosts := make([]string, 0, len(before.Ports))
 
-	rmsSurvived := make([]*h.RM, 0, len(before.Ports)+len(after.Ports))
-	rmsRemoved := make([]*h.RM, 0, len(before.Ports))
-	rmsAdded := make([]*h.RM, 0, len(after.Ports))
+	rmsSurvived := make([]*interpreter.RM, 0, len(before.Ports)+len(after.Ports))
+	rmsRemoved := make([]*interpreter.RM, 0, len(before.Ports))
+	rmsAdded := make([]*interpreter.RM, 0, len(after.Ports))
 
 	for _, port := range before.Ports {
 		beforePorts[port] = true
@@ -58,7 +58,7 @@ func TopologyChange(before, after *PortsAndF, setup *h.Setup) []h.Instruction {
 
 	configPath := setup.Dir.Join("config.json")
 
-	configProviderBefore := h.NewMutableConfigProvider(baseConfig)
+	configProviderBefore := interpreter.NewMutableConfigProvider(baseConfig)
 	configProviderAfter := configProviderBefore.Clone()
 
 	configProviderAfter.ChangeF(after.F)
@@ -82,7 +82,7 @@ func TopologyChange(before, after *PortsAndF, setup *h.Setup) []h.Instruction {
 		}
 	}
 
-	instrs := []h.Instruction{
+	instrs := []interpreter.Instruction{
 		setup,
 		configProviderBefore.Writer(configPath),
 	}
@@ -92,7 +92,7 @@ func TopologyChange(before, after *PortsAndF, setup *h.Setup) []h.Instruction {
 		instrs = append(instrs, rm.Start())
 	}
 
-	instrs = append(instrs, []h.Instruction{
+	instrs = append(instrs, []interpreter.Instruction{
 		setup.Sleep(time.Duration(5+len(rmsBefore)) * time.Second),
 		configProviderBefore.NewConfigComparer(beforeHosts...),
 		configProviderAfter.Writer(configPath),

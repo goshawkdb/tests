@@ -2,6 +2,7 @@ package harness
 
 import (
 	"flag"
+	"io/ioutil"
 	"os"
 )
 
@@ -19,13 +20,13 @@ type ConfigKey string
 
 const (
 	GoshawkDB      ConfigKey = "GOSHAWKDB_BINARY"
-	ClusterConfig            = "GOSHAWKDB_CLUSTER_CONFIG"
-	ClusterHosts             = "GOSHAWKDB_CLUSTER_HOSTS"
-	ClusterCert              = "GOSHAWKDB_CLUSTER_CERT"
-	ClusterKeyPair           = "GOSHAWKDB_CLUSTER_KEYPAIR"
-	ClientKeyPair            = "GOSHAWKDB_CLIENT_KEYPAIR"
-	RootName                 = "GOSHAWKDB_ROOT_NAME"
-	GoPath                   = "GOPATH"
+	ClusterConfig  ConfigKey = "GOSHAWKDB_CLUSTER_CONFIG"
+	ClusterHosts   ConfigKey = "GOSHAWKDB_CLUSTER_HOSTS"
+	ClusterCert    ConfigKey = "GOSHAWKDB_CLUSTER_CERT"
+	ClusterKeyPair ConfigKey = "GOSHAWKDB_CLUSTER_KEYPAIR"
+	ClientKeyPair  ConfigKey = "GOSHAWKDB_CLIENT_KEYPAIR"
+	RootName       ConfigKey = "GOSHAWKDB_ROOT_NAME"
+	GoPath         ConfigKey = "GOPATH"
 )
 
 var environment = buildTestEnv()
@@ -90,4 +91,13 @@ func (te TestEnv) Clone() TestEnv {
 		result[k] = v
 	}
 	return result
+}
+
+func (ck ConfigKey) LoadFromEnv(env TestEnv) (bool, []byte, error) {
+	if path, found := env[ck]; found {
+		bites, err := ioutil.ReadFile(path)
+		return true, bites, err
+	} else {
+		return false, nil, nil
+	}
 }

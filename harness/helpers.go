@@ -6,7 +6,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"goshawkdb.io/client"
 	"goshawkdb.io/common"
-	"io/ioutil"
 	"os"
 	"runtime"
 	"strings"
@@ -87,36 +86,26 @@ func NewHelper(t TestInterface) *TestHelper {
 	env := GetTestEnv()
 	clusterHosts := strings.Split(env.EnsureEnv(ClusterHosts, defaultClusterHosts), ",")
 
-	var clusterCert []byte
-	clusterCertPath := env[ClusterCert]
-	if len(clusterCertPath) == 0 {
-		clusterCert = []byte(defaultClusterCert)
-	} else {
-		if contents, err := ioutil.ReadFile(clusterCertPath); err == nil {
-			clusterCert = contents
-		} else {
-			t.Fatal("msg", "Error when loading the cluster cert from env var.", "envVar", clusterCertPath, "error", err)
-		}
+	clusterCertFound, clusterCertBites, err := ClusterCert.LoadFromEnv(env)
+	if !clusterCertFound {
+		clusterCertBites = []byte(defaultClusterCert)
+	} else if err != nil {
+		t.Fatal("msg", "Error when loading the cluster cert from env var.", "envVar", env[ClusterCert], "error", err)
 	}
 
-	var clientKeyPair []byte
-	clientKeyPairPath := env[ClientKeyPair]
-	if len(clientKeyPairPath) == 0 {
-		clientKeyPair = []byte(defaultClientKeyPair)
-	} else {
-		if contents, err := ioutil.ReadFile(clientKeyPairPath); err == nil {
-			clientKeyPair = contents
-		} else {
-			t.Fatal("msg", "Error when loading the client key pair from env var.", "envVar", clientKeyPairPath, "error", err)
-		}
+	clientKeyPairFound, clientKeyPairBites, err := ClientKeyPair.LoadFromEnv(env)
+	if !clientKeyPairFound {
+		clientKeyPairBites = []byte(defaultClientKeyPair)
+	} else if err != nil {
+		t.Fatal("msg", "Error when loading the client key pair from env var.", "envVar", env[ClientKeyPair], "error", err)
 	}
 	rootName := env.EnsureEnv(RootName, defaultRootName)
 
 	return &TestHelper{
 		TestInterface: t,
 		ClusterHosts:  clusterHosts,
-		ClusterCert:   clusterCert,
-		ClientKeyPair: clientKeyPair,
+		ClusterCert:   clusterCertBites,
+		ClientKeyPair: clientKeyPairBites,
 		RootName:      rootName,
 	}
 }

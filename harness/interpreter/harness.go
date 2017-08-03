@@ -1,94 +1,59 @@
-package harness
+package interpreter
 
 import (
-	"flag"
-	"fmt"
+	"github.com/go-kit/kit/log"
+	"goshawkdb.io/tests/harness"
 	"os"
 )
 
-type HarnessEnv struct {
-	envMap     map[string]string
-	binaryPath string
-	certPath   string
-	configPath string
+type InterpreterEnv struct {
+	env harness.TestEnv
+	log.Logger
 }
 
-func BuildHarnessEnv() *HarnessEnv {
-	envMap := extractFromEnv(
-		"GOSHAWKDB_BINARY",
-		"GOSHAWKDB_CLUSTER_CONFIG",
-		"GOSHAWKDB_CLUSTER_HOSTS",
-		"GOSHAWKDB_CLUSTER_CERT",
-		"GOSHAWKDB_CLUSTER_KEYPAIR",
-		"GOSHAWKDB_ROOT_NAME",
-		"GOPATH")
-
-	var binaryPath, certPath, configPath string
-	flag.StringVar(&binaryPath, "goshawkdb", "", "`Path` to GoshawkDB binary.")
-	flag.StringVar(&certPath, "cert", "", "`Path` to cluster certificate and key file.")
-	flag.StringVar(&configPath, "config", "", "`Path` to configuration file.")
-	flag.Parse()
-
-	return &HarnessEnv{
-		envMap:     envMap,
-		binaryPath: binaryPath,
-		certPath:   certPath,
-		configPath: configPath,
+func NewInterpreterEnv() *InterpreterEnv {
+	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
+	return &InterpreterEnv{
+		env:    harness.GetTestEnv(),
+		Logger: logger,
 	}
 }
 
-func (he *HarnessEnv) Run(setup *Setup, prog Instruction) error {
-	envMapCopy := make(map[string]string, len(he.envMap))
-	for k, v := range he.envMap {
-		envMapCopy[k] = v
-	}
-	if len(he.binaryPath) > 0 {
-		if err := setup.GosBin.SetPath(he.binaryPath, true); err != nil {
-			return err
-		}
-		fmt.Println(setup.GosBin.Path())
-		delete(envMapCopy, "GOSHAWKDB_BINARY")
-	} else if path, found := envMapCopy["GOSHAWKDB_BINARY"]; found {
-		if err := setup.GosBin.SetPath(path, true); err != nil {
+func (ie InterpreterEnv) Run(setup *Setup, prog Instruction) error {
+	binaryPath := ie.env[harness.GoshawkDB]
+	certPath := ie.env[harness.ClusterCert]
+	configPath := ie.env[harness.ClusterConfig]
+
+	ie.Log("GoshawkDB", binaryPath, "ClusterCert", certPath, "ClusterConfig", configPath)
+
+	if len(binaryPath) > 0 {
+		if err := setup.GosBin.SetPath(binaryPath, true); err != nil {
 			return err
 		}
 	}
 
-	if len(he.certPath) > 0 {
-		if err := setup.GosCert.SetPath(he.certPath, false); err != nil {
-			return err
-		}
-		delete(envMapCopy, "GOSHAWKDB_CLUSTER_CERT")
-	} else if path, found := envMapCopy["GOSHAWKDB_CLUSTER_CERT"]; found {
-		if err := setup.GosCert.SetPath(path, false); err != nil {
+	if len(certPath) > 0 {
+		if err := setup.GosCert.SetPath(certPath, false); err != nil {
 			return err
 		}
 	}
 
-	if len(he.configPath) > 0 {
-		if err := setup.GosConfig.SetPath(he.configPath, false); err != nil {
-			return err
-		}
-		delete(envMapCopy, "GOSHAWKDB_CLUSTER_CONFIG")
-	} else if path, found := envMapCopy["GOSHAWKDB_CLUSTER_CONFIG"]; found {
-		if err := setup.GosConfig.SetPath(path, false); err != nil {
+	if len(configPath) > 0 {
+		if err := setup.GosConfig.SetPath(configPath, false); err != nil {
 			return err
 		}
 	}
 
-	setup.SetEnv(envMapCopy)
+	setup.SetEnv(ie.env.Clone())
 
-	l := setup.NewLogger()
-	return prog.Exec(l)
+	return prog.Exec(ie.Logger)
 }
 
-func extractFromEnv(keys ...string) map[string]string {
-	resultMap := make(map[string]string, len(keys))
-	for _, key := range keys {
-		value := os.Getenv(key)
-		if len(value) > 0 {
-			resultMap[key] = value
-		}
+func (ie InterpreterEnv) MaybeExit(err error) error {
+	if err != nil {
+		ie.Log("error", err)
+		os.Exit(1)
 	}
-	return resultMap
+	return err
 }

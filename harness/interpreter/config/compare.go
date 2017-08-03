@@ -3,18 +3,18 @@ package compare
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/go-kit/kit/log"
 	"goshawkdb.io/client"
 	"goshawkdb.io/server"
 	"goshawkdb.io/server/configuration"
 	"goshawkdb.io/tests/harness"
-	"log"
 )
 
-func CompareConfigs(host string, provided *configuration.ConfigurationJSON) (bool, error) {
-	// we just use TestHelper to grab certs from the env
+func CompareConfigs(host string, provided *configuration.ConfigurationJSON, logger log.Logger) (bool, error) {
+	// we just use harness to grab certs from the env
 	th := harness.NewMainHelper()
 
-	c, err := client.NewConnection(host, th.ClientKeyPair, th.ClusterCert)
+	c, err := client.NewConnection(host, th.ClientKeyPair, th.ClusterCert, logger)
 	if err != nil {
 		return false, fmt.Errorf("Error on connection: %v", err)
 	}
@@ -43,7 +43,7 @@ func CompareConfigs(host string, provided *configuration.ConfigurationJSON) (boo
 	if configFromGos.Equal(provided) {
 		return true, nil
 	} else {
-		log.Printf("Mismatched configs: gos: %v; provided: %v", configFromGos, provided)
+		logger.Log("providedConfig", provided, "goshawkDBConfig", configFromGos)
 		return false, nil
 	}
 }

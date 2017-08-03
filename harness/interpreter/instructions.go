@@ -1,15 +1,16 @@
-package harness
+package interpreter
 
 import (
 	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/go-kit/kit/log"
 	config "goshawkdb.io/server/configuration"
-	hconfig "goshawkdb.io/tests/harness/config"
+	"goshawkdb.io/tests/harness"
+	iconfig "goshawkdb.io/tests/harness/interpreter/config"
 	"io"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net"
 	"os"
@@ -23,12 +24,11 @@ import (
 )
 
 type Instruction interface {
-	Exec(*log.Logger) error
+	Exec(log.Logger) error
 }
 
 type Setup struct {
 	rng       *rand.Rand
-	logOutput io.Writer
 	GosBin    *PathProvider
 	GosConfig *PathProvider
 	GosCert   *PathProvider
@@ -39,7 +39,6 @@ type Setup struct {
 func NewSetup() *Setup {
 	return &Setup{
 		rng:       rand.New(rand.NewSource(time.Now().UnixNano())),
-		logOutput: os.Stdout,
 		GosBin:    &PathProvider{},
 		GosConfig: &PathProvider{},
 		GosCert:   &PathProvider{},
@@ -47,34 +46,23 @@ func NewSetup() *Setup {
 	}
 }
 
-func (s *Setup) SetEnv(envMap map[string]string) {
+func (s *Setup) SetEnv(envMap harness.TestEnv) {
 	env := make([]string, 0, len(envMap))
 	for k, v := range envMap {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
+		env = append(env, fmt.Sprintf("%s=%s", string(k), v))
 	}
 	s.env = env
 }
 
-func (s *Setup) NewLogger() *log.Logger {
-	return log.New(s.logOutput, "", log.Ldate|log.Ltime|log.Lmicroseconds)
-}
-
-func (s *Setup) cloneLogger(l *log.Logger, prefixExt string) *log.Logger {
-	return log.New(s.logOutput, fmt.Sprintf("%s|%s", l.Prefix(), prefixExt), l.Flags())
-}
-
-func (s *Setup) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, s))
+func (s *Setup) Exec(l log.Logger) error {
+	l = log.With(l, "i", s.String())
 
 	if len(s.Dir.Path()) == 0 {
 		dir, err := ioutil.TempDir(os.TempDir(), "GoshawkDBHarness")
 		if err != nil {
-			l.Printf("Error encountered: %v", err)
 			return err
 		}
-		l.Printf("Created dir in %s", dir)
+		l.Log("msg", "Created directory.", "directory", dir)
 		return s.Dir.SetPath(dir, false)
 	} else {
 		return s.Dir.EnsureDir()
@@ -169,14 +157,12 @@ func (pp *PathProvider) CopyTo(dir, receiver *PathProvider) Instruction {
 	}
 }
 
-func (pc *PathCopier) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, pc))
+func (pc *PathCopier) Exec(l log.Logger) error {
+	l = log.With(l, "i", pc.String())
 
 	src := pc.src.Path()
 	dest := pc.dest.Path()
-	l.Printf("Copying %v into %v", src, dest)
+	l.Log("source", src, "destination", dest)
 	data, err := ioutil.ReadFile(src)
 	if err != nil {
 		return err
@@ -336,10 +322,11 @@ type ConfigWriter struct {
 	cp ConfigProvider
 }
 
-func (cw *ConfigWriter) Exec(l *log.Logger) error {
+func (cw *ConfigWriter) Exec(l log.Logger) error {
+	l = log.With(l, "i", cw.String())
 	if c, err := cw.cp.Eval(); err == nil {
 		dest := cw.lp.Path()
-		l.Printf("Writing config %v into %v", c, dest)
+		l.Log("destination", dest)
 		data, err := json.MarshalIndent(c, "", "\t")
 		if err != nil {
 			return err
@@ -361,22 +348,20 @@ type ConfigComparer struct {
 	hosts []string
 }
 
-func (cc *ConfigComparer) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cc))
+func (cc *ConfigComparer) Exec(l log.Logger) error {
+	l = log.With(l, "i", cc.String())
 	if c, err := cc.cp.Eval(); err == nil {
 		for _, host := range cc.hosts {
-			l.Printf("Starting against %s", host)
-			if equal, err := hconfig.CompareConfigs(host, c); err != nil {
-				l.Printf("Config Comparer error: %v", err)
+			m := log.With(l, "host", host)
+			if equal, err := iconfig.CompareConfigs(host, c, m); err != nil {
+				m.Log("error", err)
 				return err
 			} else if !equal {
-				err = errors.New("Configs do not match")
-				l.Print(err)
+				err = errors.New("Configs do not match.")
+				m.Log("error", err)
 				return err
 			} else {
-				l.Printf("Configs match at %s", host)
+				m.Log("msg", "Configs match.")
 			}
 		}
 		return nil
@@ -421,14 +406,12 @@ func (cmd *Command) Start() *CommandStart {
 	return (*CommandStart)(cmd)
 }
 
-func (cmd *CommandStart) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cmd))
+func (cmd *CommandStart) Exec(l log.Logger) error {
+	l = log.With(l, "i", cmd.String())
 	return cmd.start(l)
 }
 
-func (cmd *CommandStart) start(l *log.Logger) error {
+func (cmd *CommandStart) start(l log.Logger) error {
 	eCmd := exec.Command(cmd.exePath.Path(), cmd.args...)
 	eCmd.Env = cmd.env
 	if err := cmd.cwd.EnsureDir(); err != nil {
@@ -440,13 +423,13 @@ func (cmd *CommandStart) start(l *log.Logger) error {
 		if err == nil {
 			return nil
 		} else {
-			l.Printf("Error encountered: %v", err)
+			l.Log("error", err)
 			var errkill error
 			if errkill = eCmd.Process.Kill(); errkill == nil {
 				errkill = eCmd.Wait()
 			}
 			if errkill != nil {
-				l.Printf("Supplementary error encountered when killing: %v", errkill)
+				l.Log("msg", "Supplementary error encountered when killing.", "error", errkill)
 			}
 			return err
 		}
@@ -470,13 +453,13 @@ func (cmd *CommandStart) start(l *log.Logger) error {
 	cmd.stderr = stderr
 	cmd.readersWG = new(sync.WaitGroup)
 	cmd.readersWG.Add(2)
-	go cmd.reader(stdout, cmd.setup.cloneLogger(l, "StdOut"))
-	go cmd.reader(stderr, cmd.setup.cloneLogger(l, "StdErr"))
+	go cmd.reader(stdout, log.With(l, "fd", "stdout"))
+	go cmd.reader(stderr, log.With(l, "fd", "stderr"))
 
 	return nil
 }
 
-func (cmd *CommandStart) reader(reader io.ReadCloser, l *log.Logger) {
+func (cmd *CommandStart) reader(reader io.ReadCloser, l log.Logger) {
 	defer cmd.readersWG.Done()
 	lineReader := bufio.NewReader(reader)
 	var err error
@@ -484,13 +467,13 @@ func (cmd *CommandStart) reader(reader io.ReadCloser, l *log.Logger) {
 	for err == nil {
 		line, err = lineReader.ReadBytes('\n')
 		if len(line) > 0 {
-			l.Printf("%s", string(line))
+			l.Log("line", string(line))
 		}
 	}
 	if err != nil && err != io.EOF {
-		l.Printf("Error encountered: %v", err)
+		l.Log("error", err)
 	} else {
-		l.Print("Reader finished")
+		l.Log("msg", "Reader finished.")
 	}
 }
 
@@ -512,16 +495,12 @@ func (cmd *Command) Signal(sig os.Signal) *CommandSignal {
 	}
 }
 
-func (cmds *CommandSignal) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cmds))
-	l.Printf("Sending signal %v...", cmds.sig)
+func (cmds *CommandSignal) Exec(l log.Logger) error {
+	l = log.With(l, "i", cmds.String())
+	l.Log("signal", cmds.sig.String())
 	if err := cmds.cmd.Process.Signal(cmds.sig); err != nil {
-		l.Printf("Error encountered (ignoring): %v", err)
-		// return err
+		l.Log("ignoredError", err)
 	}
-	l.Printf("Sending signal %v...done", cmds.sig)
 	return nil
 }
 
@@ -545,21 +524,19 @@ func (cmd *Command) Wait() *CommandWait {
 	return (*CommandWait)(cmd)
 }
 
-func (cmdw *CommandWait) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, cmdw))
-	l.Print("Waiting for process end...")
+func (cmdw *CommandWait) Exec(l log.Logger) error {
+	l = log.With(l, "i", cmdw.String())
+	l.Log("msg", "begin")
 	cmdw.readersWG.Wait()
 	if err := cmdw.cmd.Wait(); err != nil {
-		l.Printf("Error encountered: %v", err)
+		l.Log("error", err)
 		return err
 	}
 	cmdw.cmd = nil
 	cmdw.stdout = nil
 	cmdw.stderr = nil
 	cmdw.readersWG = nil
-	l.Print("Waiting for process end...done")
+	l.Log("msg", "end")
 	return nil
 }
 
@@ -603,20 +580,18 @@ func (rm *RM) Start() *RMStart {
 
 type RMStart RM
 
-func (rms *RMStart) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, rms))
+func (rms *RMStart) Exec(l log.Logger) error {
+	l = log.With(l, "i", rms.String())
 
 	if rms.Command.args == nil {
 		dirPP := rms.Command.cwd
 		err := dirPP.SetPath(filepath.Join(rms.setup.Dir.Path(), rms.Name), false)
 		if err != nil {
-			l.Printf("Error encountered: %v", err)
+			l.Log("error", err)
 			return err
 		}
 		if err = dirPP.EnsureDir(); err != nil {
-			l.Printf("Error encountered: %v", err)
+			l.Log("error", err)
 			return err
 		}
 
@@ -636,7 +611,7 @@ func (rms *RMStart) Exec(l *log.Logger) error {
 }
 
 func (rms *RMStart) String() string {
-	return fmt.Sprintf("RMStart:%v", rms.Name)
+	return fmt.Sprintf("RMStart(%s)", rms.Name)
 }
 
 // sleepy
@@ -662,17 +637,15 @@ func (s *Setup) SleepRandom(min, max time.Duration) *Sleep {
 	}
 }
 
-func (s *Sleep) Exec(l *log.Logger) error {
+func (s *Sleep) Exec(l log.Logger) error {
 	d := s.min
 	if diff := s.max - s.min; diff > 0 {
 		d = s.min + time.Duration(s.setup.rng.Int63n(int64(diff)))
 	}
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, s))
-	l.Printf("Sleeping for %v...", d)
+	l = log.With(l, "i", s.String())
+	l.Log("begin", d)
 	time.Sleep(d)
-	l.Printf("Sleeping for %v...done", d)
+	l.Log("end", d)
 	return nil
 }
 
@@ -690,12 +663,11 @@ func (s *Setup) AbsorbError(instr Instruction) *AbsorbError {
 	return &AbsorbError{wrapped: instr}
 }
 
-func (ae AbsorbError) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, ae))
-	err := ae.wrapped.Exec(l)
-	l.Printf("Absorbed: %v", err)
+func (ae AbsorbError) Exec(l log.Logger) error {
+	l = log.With(l, "i", ae.String())
+	if err := ae.wrapped.Exec(l); err != nil {
+		l.Log("absorbed", err)
+	}
 	return nil
 }
 
@@ -707,13 +679,12 @@ func (ae AbsorbError) String() string {
 
 type Program []Instruction
 
-func (p Program) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
+func (p Program) Exec(l log.Logger) error {
+	l = log.With(l, "i", p.String())
 	for idx, instr := range p {
-		l.SetPrefix(fmt.Sprintf("%s|Program(%d)", parentPrefix, idx))
-		if err := instr.Exec(l); err != nil {
-			l.Printf("Error encountered: %v", err)
+		m := log.With(l, "c", idx)
+		if err := instr.Exec(m); err != nil {
+			m.Log("error", err)
 			return err
 		}
 	}
@@ -721,7 +692,7 @@ func (p Program) Exec(l *log.Logger) error {
 }
 
 func (p Program) String() string {
-	return fmt.Sprintf("Program %v", len(p))
+	return fmt.Sprintf("Program(%v)", len(p))
 }
 
 // InParallel. This waits for the end of all of them
@@ -738,17 +709,18 @@ func (s *Setup) InParallel(instrs ...Instruction) *InParallel {
 	}
 }
 
-func (ip *InParallel) Exec(l *log.Logger) error {
+func (ip *InParallel) Exec(l log.Logger) error {
+	l = log.With(l, "i", ip.String())
 	wg := new(sync.WaitGroup)
 	wg.Add(len(ip.instrs))
 	errChan := make(chan error, len(ip.instrs))
 	for idx, instr := range ip.instrs {
 		instrCopy := instr
-		loggerClone := ip.setup.cloneLogger(l, fmt.Sprintf("InParallel(%d)", idx))
+		m := log.With(l, "c", idx)
 		go func() {
 			defer wg.Done()
-			if err := instrCopy.Exec(loggerClone); err != nil {
-				loggerClone.Printf("Error encountered: %v", err)
+			if err := instrCopy.Exec(m); err != nil {
+				m.Log("error", err)
 				errChan <- err
 			}
 		}()
@@ -767,7 +739,7 @@ func (ip *InParallel) Exec(l *log.Logger) error {
 }
 
 func (ip *InParallel) String() string {
-	return fmt.Sprintf("InParallel %v", len(ip.instrs))
+	return fmt.Sprintf("InParallel(%d)", len(ip.instrs))
 }
 
 // UntilError
@@ -782,13 +754,12 @@ func (s *Setup) UntilError(instr Instruction) Instruction {
 	}
 }
 
-func (ue *UntilError) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
+func (ue *UntilError) Exec(l log.Logger) error {
+	l = log.With(l, "i", ue.String())
 	for idx := 0; true; idx++ {
-		l.SetPrefix(fmt.Sprintf("%s|%v(%d)", parentPrefix, ue, idx))
-		if err := ue.wrapped.Exec(l); err != nil {
-			l.Printf("Error encountered: %v", err)
+		m := log.With(l, "c", idx)
+		if err := ue.wrapped.Exec(m); err != nil {
+			m.Log("error", err)
 			return err
 		}
 	}
@@ -813,21 +784,20 @@ func (s *Setup) PickOne(instrs ...Instruction) *PickOne {
 	}
 }
 
-func (po *PickOne) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
+func (po *PickOne) Exec(l log.Logger) error {
+	l = log.With(l, "i", po.String())
 	picked := po.setup.rng.Intn(len(po.instrs))
 	instr := po.instrs[picked]
-	l.SetPrefix(fmt.Sprintf("%s|%v(%d)", parentPrefix, po, picked))
+	l.Log("picked", picked)
 	if err := instr.Exec(l); err != nil {
-		l.Printf("Error encountered: %v", err)
+		l.Log("error", err)
 		return err
 	}
 	return nil
 }
 
 func (po *PickOne) String() string {
-	return fmt.Sprintf("PickOne %v", len(po.instrs))
+	return fmt.Sprintf("PickOne(%d)", len(po.instrs))
 }
 
 type LogMsg string
@@ -836,16 +806,13 @@ func (s *Setup) Log(msg string) LogMsg {
 	return LogMsg(msg)
 }
 
-func (s LogMsg) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v", parentPrefix, s))
-	l.Print(string(s))
+func (s LogMsg) Exec(l log.Logger) error {
+	l.Log("i", s.String, "msg", string(s))
 	return nil
 }
 
 func (s LogMsg) String() string {
-	return "Log"
+	return "LogMsg"
 }
 
 // UntilStopped (also stops on error)
@@ -865,13 +832,12 @@ func (s *Setup) UntilStopped(instr Instruction) *UntilStopped {
 	return us
 }
 
-func (us *UntilStopped) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
+func (us *UntilStopped) Exec(l log.Logger) error {
+	l = log.With(l, "i", us.String())
 	for idx := 0; 0 == atomic.LoadUint32(&us.stopped); idx++ {
-		l.SetPrefix(fmt.Sprintf("%s|%v(%d)", parentPrefix, us, idx))
-		if err := us.wrapped.Exec(l); err != nil {
-			l.Printf("Error encountered: %v", err)
+		m := log.With(l, "c", idx)
+		if err := us.wrapped.Exec(m); err != nil {
+			m.Log("error", err)
 			return err
 		}
 	}
@@ -889,10 +855,8 @@ func (us *UntilStopped) String() string {
 
 type UntilStoppedStop UntilStopped
 
-func (uss *UntilStoppedStop) Exec(l *log.Logger) error {
-	parentPrefix := l.Prefix()
-	defer l.SetPrefix(parentPrefix)
-	l.SetPrefix(fmt.Sprintf("%s|%v Stopping", parentPrefix, uss))
+func (uss *UntilStoppedStop) Exec(l log.Logger) error {
+	l.Log("i", uss.String())
 	atomic.StoreUint32(&uss.stopped, 1)
 	<-uss.finished
 	return nil
