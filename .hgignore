@@ -6,4 +6,4 @@ main/main
 *.swp
 
 syntax: regexp
-(^|/)\#[^/]+\#
+(.*/)?\#[^/]+\#
