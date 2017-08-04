@@ -1,0 +1,12 @@
+caps
+solocount
+parcount
+simpleconflict
+retry
+nested
+banktransfer
+writeskew
+atomicrw
+strongserializable
+skiplist
+pqueue

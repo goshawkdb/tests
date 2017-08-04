@@ -1,9 +1,9 @@
 syntax: glob
 *~
-*.log
+*log
 *.test
 main/main
 *.swp
 
 syntax: regexp
-(^|/)\#[^/]+\#
+(.*/)?\#[^/]+\#

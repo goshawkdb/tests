@@ -1,28 +1,24 @@
 package main
 
 import (
-	h "goshawkdb.io/tests/harness"
-	"log"
+	"goshawkdb.io/tests/harness/interpreter"
 	"syscall"
 	"time"
 )
 
 func main() {
-	he := h.BuildHarnessEnv()
-	setup := h.NewSetup()
+	ie := interpreter.NewInterpreterEnv()
+	setup := interpreter.NewSetup()
 
 	rm1 := setup.NewRM("one", 10001, nil, nil)
 	rm2 := setup.NewRM("two", 10002, nil, nil)
 	rm3 := setup.NewRM("three", 10003, nil, nil)
 
-	goPP, err := h.NewPathProvider("go", true)
-	if err != nil {
-		log.Fatal(err)
-	}
-	cwdPP, err := h.NewPathProvider("/home/matthew/programming/goshawkdb/Go/src/goshawkdb.io/collections/linearhash", false)
-	if err != nil {
-		log.Fatal(err)
-	}
+	goPP, err := interpreter.NewPathProvider("go", true)
+	ie.MaybeExit(err)
+
+	cwdPP, err := interpreter.NewPathProvider("/home/matthew/programming/goshawkdb/Go/src/goshawkdb.io/collections/linearhash", false)
+	ie.MaybeExit(err)
 
 	collectionSoak := setup.NewCmd(
 		goPP,
@@ -31,13 +27,13 @@ func main() {
 		nil,
 	)
 
-	stoppableTest := setup.UntilStopped(h.Program([]h.Instruction{
+	stoppableTest := setup.UntilStopped(interpreter.Program([]interpreter.Instruction{
 		collectionSoak.Start(),
 		setup.AbsorbError(collectionSoak.Wait()),
 		setup.Sleep(5 * time.Second),
 	}))
 
-	stoppableServers := setup.UntilStopped(h.Program([]h.Instruction{
+	stoppableServers := setup.UntilStopped(interpreter.Program([]interpreter.Instruction{
 		setup.SleepRandom(5*time.Second, 10*time.Second),
 		rm2.Terminate(),
 		setup.SleepRandom(1*time.Second, 5*time.Second),
@@ -50,7 +46,7 @@ func main() {
 		rm2.Start(),
 	}))
 
-	prog := h.Program([]h.Instruction{
+	prog := interpreter.Program([]interpreter.Instruction{
 		setup,
 		setup.InParallel(rm1.Start(), rm2.Start(), rm3.Start()),
 
@@ -61,7 +57,7 @@ func main() {
 			stoppableTest,
 			stoppableServers,
 
-			h.Program([]h.Instruction{
+			interpreter.Program([]interpreter.Instruction{
 				setup.Sleep(2 * time.Minute),
 				stoppableTest.Stop(),
 				stoppableServers.Stop(), // will leave all 3 running
@@ -75,5 +71,5 @@ func main() {
 			}),
 		),
 	})
-	log.Println(he.Run(setup, prog))
+	ie.MaybeExit(ie.Run(setup, prog))
 }

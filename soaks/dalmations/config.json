@@ -22,19 +22,9 @@
         "localhost:10017",
         "localhost:10018",
         "localhost:10019",
-        "localhost:10020",
-        "localhost:10021",
-        "localhost:10022",
-        "localhost:10023",
-        "localhost:10024",
-        "localhost:10025",
-        "localhost:10026",
-        "localhost:10027",
-        "localhost:10028",
-        "localhost:10029",
-        "localhost:10030"
+        "localhost:10020"
     ],
-    "F": 15,
+    "F": 10,
     "MaxRMCount": 128,
     "NoSync": true,
     "ClientCertificateFingerprints": {
