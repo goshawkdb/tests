@@ -18,7 +18,7 @@ func CompareConfigs(host string, provided *configuration.ConfigurationJSON, logg
 	if err != nil {
 		return false, fmt.Errorf("Error on connection: %v", err)
 	}
-	defer c.Shutdown()
+	defer c.ShutdownSync()
 
 	result, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
 		rootObjs, err := txn.GetRootObjects()

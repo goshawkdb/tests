@@ -601,7 +601,7 @@ func (rms *RMStart) Exec(l log.Logger) error {
 			"-cert", rms.certPath.Path(),
 			"-config", rms.configPath.Path(),
 			"-prometheusPort", fmt.Sprintf("%d", 1000+rms.Port),
-			"-noWSS",
+			"-wssPort", "0",
 		}
 
 		rms.Command.env = rms.setup.env
