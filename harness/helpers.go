@@ -141,7 +141,7 @@ func (th *TestHelper) CreateConnections(num int) []*Connection {
 func (th *TestHelper) Shutdown() {
 	for _, c := range th.connections {
 		c.Log("AverageSubmissionTime", c.AvgSubmissionTime(), "SubmissionsCount", c.submissionCount)
-		c.Connection.Shutdown()
+		c.Connection.ShutdownSync()
 	}
 }
 
