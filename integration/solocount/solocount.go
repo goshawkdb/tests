@@ -17,26 +17,27 @@ func SoloCount(th *harness.TestHelper) {
 	encountered := make(map[uint64]bool)
 	expected := uint64(0)
 	for {
-		res, _, err := c.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := c.GetRootObject(txn)
-			if err != nil {
-				return nil, err
+		res, err := c.RunTransaction(func(txn *client.Transaction) (interface{}, error) {
+			rootPtr := c.GetRootObject(txn)
+			if rootPtr == nil {
+				return nil, fmt.Errorf("No root object named '%s' found", c.RootName)
+			} else {
+				val, _, err := txn.Read(*rootPtr)
+				if err != nil {
+					return nil, err
+				}
+				cur := binary.BigEndian.Uint64(val)
+				encountered[cur] = true
+				if cur != expected {
+					return nil, fmt.Errorf("Expected to find %v but found %v", expected, cur)
+				}
+				cur++
+				binary.BigEndian.PutUint64(val, cur)
+				if err := txn.Write(*rootPtr, val); err != nil {
+					return nil, err
+				}
+				return cur, nil
 			}
-			rootVal, err := rootObj.Value()
-			if err != nil {
-				return nil, err
-			}
-			cur := binary.BigEndian.Uint64(rootVal)
-			encountered[cur] = true
-			if cur != expected {
-				return nil, fmt.Errorf("Expected to find %v but found %v", expected, cur)
-			}
-			cur++
-			binary.BigEndian.PutUint64(rootVal, cur)
-			if err := rootObj.Set(rootVal); err != nil {
-				return nil, err
-			}
-			return cur, nil
 		})
 		th.MaybeFatal(err)
 		expected++

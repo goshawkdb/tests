@@ -162,16 +162,8 @@ func (th *TestHelper) InParallel(n int, fun func(int, *Connection) error) (*sync
 	return endBarrier, errCh
 }
 
-func (th *TestHelper) GetRootObject(txn *client.Txn) (client.ObjectRef, error) {
-	rootObjs, err := txn.GetRootObjects()
-	if err != nil {
-		return client.ObjectRef{}, err
-	}
-	obj, found := rootObjs[th.RootName]
-	if !found {
-		return client.ObjectRef{}, fmt.Errorf("No root object named '%s' found", th.RootName)
-	}
-	return obj, nil
+func (th *TestHelper) GetRootObject(txn *client.Transaction) *client.RefCap {
+	return txn.Root(th.RootName)
 }
 
 type Connection struct {
@@ -183,80 +175,66 @@ type Connection struct {
 	totalSubmissionDuration time.Duration
 }
 
-func (conn *Connection) RunTransaction(fun func(*client.Txn) (interface{}, error)) (interface{}, *common.TxnId, error) {
-	result, stats, err := conn.Connection.RunTransaction(fun)
-	conn.submissionCount += len(stats.Submissions)
-	if conn.submissionCount > 0 && conn.submissionCount%64 == 0 {
-		conn.Log("submissionCount", conn.submissionCount)
-	}
-	for _, s := range stats.Submissions {
-		conn.totalSubmissionDuration += s
-	}
-	return result, stats.TxnId, err
+func (conn *Connection) RunTransaction(fun func(*client.Transaction) (interface{}, error)) (interface{}, error) {
+	result, err := conn.Connection.Transact(fun)
+	/*
+		conn.submissionCount += len(stats.Submissions)
+		if conn.submissionCount > 0 && conn.submissionCount%64 == 0 {
+			conn.Log("submissionCount", conn.submissionCount)
+		}
+		for _, s := range stats.Submissions {
+			conn.totalSubmissionDuration += s
+		}
+	*/
+	return result, err
 }
 
-func (conn *Connection) SetRootToZeroUInt64() (*common.TxnId, error) {
+func (conn *Connection) SetRootToZeroUInt64() error {
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, 0)
-	txnId, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObjs, err := txn.GetRootObjects()
-		if err != nil {
-			return nil, err
-		}
-		rootObj, found := rootObjs[conn.RootName]
-		if !found {
+	_, err := conn.RunTransaction(func(txn *client.Transaction) (interface{}, error) {
+		rootPtr := conn.GetRootObject(txn)
+		if rootPtr == nil {
 			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
+		} else {
+			return nil, txn.Write(*rootPtr, buf)
 		}
-		rootObj.Set(buf)
-		return rootObj.Version()
 	})
-	return txnId.(*common.TxnId), conn.MaybeFatal(err)
+	return conn.MaybeFatal(err)
 }
 
-func (conn *Connection) SetRootToNZeroObjs(n int) (*common.TxnId, error) {
+func (conn *Connection) SetRootToNZeroObjs(n int) error {
 	zeroBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(zeroBuf, 0)
-	txnId, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObjs, err := txn.GetRootObjects()
-		if err != nil {
-			return nil, err
-		}
-		objs := make([]client.ObjectRef, n)
-		for idx := range objs {
-			obj, err := txn.CreateObject(zeroBuf)
-			if err != nil {
-				return nil, err
-			}
-			objs[idx] = obj
-		}
-		rootObj, found := rootObjs[conn.RootName]
-		if !found {
+	_, err := conn.RunTransaction(func(txn *client.Transaction) (interface{}, error) {
+		rootPtr := conn.GetRootObject(txn)
+		if rootPtr == nil {
 			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
+		} else {
+			ptrs := make([]client.RefCap, n)
+			for idx := range ptrs {
+				objPtr, err := txn.Create(zeroBuf)
+				if err != nil {
+					return nil, err
+				}
+				ptrs[idx] = objPtr
+			}
+			return nil, txn.Write(*rootPtr, []byte{}, ptrs...)
 		}
-		if err := rootObj.Set([]byte{}, objs...); err != nil {
-			return nil, err
-		}
-		return rootObj.Version()
 	})
-	return txnId.(*common.TxnId), conn.MaybeFatal(err)
+	return conn.MaybeFatal(err)
 }
 
 func (conn *Connection) AwaitRootVersionChange(vsn *common.TxnId) error {
-	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObjs, err := txn.GetRootObjects()
-		if err != nil {
-			return nil, err
-		}
-		rootObj, found := rootObjs[conn.RootName]
-		if !found {
+	_, err := conn.RunTransaction(func(txn *client.Transaction) (interface{}, error) {
+		rootPtr := conn.GetRootObject(txn)
+		if rootPtr == nil {
 			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
+		} else if false {
+			return nil, txn.Retry()
+		} else {
+			return nil, nil
 		}
-		if rootVsn, err := rootObj.Version(); err != nil {
-			return nil, err
-		} else if vsn.Compare(rootVsn) == common.EQ {
-			return client.Retry, nil
-		}
-		return nil, nil
 	})
 	return conn.MaybeFatal(err)
 }
