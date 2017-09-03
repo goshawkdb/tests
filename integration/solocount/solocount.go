@@ -13,19 +13,17 @@ func SoloCount(th *harness.TestHelper) {
 	limit := uint64(1000)
 
 	defer th.Shutdown()
-	c.SetRootToZeroUInt64()
+	guidBuf, _ := c.SetRootToNZeroObjs(1)
+	objPtrs, _ := c.AwaitRootVersionChange(guidBuf, 1)
+	objPtr := objPtrs[0]
+
 	encountered := make(map[uint64]bool)
 	expected := uint64(0)
 	for {
-		res, err := c.RunTransaction(func(txn *client.Transaction) (interface{}, error) {
-			rootPtr := c.GetRootObject(txn)
-			if rootPtr == nil {
-				return nil, fmt.Errorf("No root object named '%s' found", c.RootName)
+		res, err := c.Transact(func(txn *client.Transaction) (interface{}, error) {
+			if val, _, err := txn.Read(objPtr); err != nil || txn.RestartNeeded() {
+				return nil, err
 			} else {
-				val, _, err := txn.Read(*rootPtr)
-				if err != nil {
-					return nil, err
-				}
 				cur := binary.BigEndian.Uint64(val)
 				encountered[cur] = true
 				if cur != expected {
@@ -33,7 +31,7 @@ func SoloCount(th *harness.TestHelper) {
 				}
 				cur++
 				binary.BigEndian.PutUint64(val, cur)
-				if err := txn.Write(*rootPtr, val); err != nil {
+				if err := txn.Write(objPtr, val); err != nil {
 					return nil, err
 				}
 				return cur, nil
