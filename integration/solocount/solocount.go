@@ -10,7 +10,7 @@ import (
 // We have one client, and it counts from 0 to 1000
 func SoloCount(th *harness.TestHelper) {
 	c := th.CreateConnections(1)[0]
-	limit := uint64(1000)
+	limit := uint64(10000)
 
 	defer th.Shutdown()
 	guidBuf, _ := c.SetRootToNZeroObjs(1)
