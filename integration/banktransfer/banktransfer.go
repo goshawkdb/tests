@@ -3,7 +3,6 @@ package banktransfer
 import (
 	"encoding/binary"
 	"goshawkdb.io/client"
-	"goshawkdb.io/common"
 	"goshawkdb.io/tests/harness"
 	"math/rand"
 	"sync"
@@ -20,24 +19,22 @@ func BankTransfer(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
-	vsn, _ := conn.SetRootToNZeroObjs(accounts)
-	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := conn.GetRootObject(txn)
-		if err != nil {
+	guidBuf, err := conn.SetRootToNZeroObjs(accounts)
+	th.MaybeFatal(err)
+	_, err = conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+		rootPtr := txn.Root(conn.RootName)
+		if _, rootRefs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
-		}
-		refs, err := rootObj.References()
-		if err != nil {
-			return nil, err
-		}
-		buf := make([]byte, 8)
-		binary.BigEndian.PutUint64(buf, initialWealth)
-		for _, account := range refs {
-			if err = account.Set(buf); err != nil {
-				return nil, err
+		} else {
+			buf := make([]byte, 8)
+			binary.BigEndian.PutUint64(buf, initialWealth)
+			for _, account := range rootRefs {
+				if err = txn.Write(account, buf); err != nil {
+					return nil, err
+				}
 			}
+			return nil, nil
 		}
-		return nil, nil
 	})
 	th.MaybeFatal(err)
 
@@ -46,7 +43,7 @@ func BankTransfer(th *harness.TestHelper) {
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(parTransfers)
 	endBarrier, errCh := th.InParallel(parTransfers, func(connIdx int, conn *harness.Connection) error {
-		return runTransfers(accounts, conn, vsn, transfers, totalWealth, startBarrier)
+		return runTransfers(accounts, conn, guidBuf, transfers, totalWealth, startBarrier)
 	})
 
 	c := make(chan struct{})
@@ -65,30 +62,22 @@ func BankTransfer(th *harness.TestHelper) {
 
 func observeTotalWealth(conn *harness.Connection, totalWealth uint64, terminate chan struct{}) {
 	for {
-		select {
-		case <-terminate:
-			return
-		default:
-		}
 		time.Sleep(15 * time.Millisecond)
-		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
+		res, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
 			sum := uint64(0)
-			rootObj, err := conn.GetRootObject(txn)
-			if err != nil {
+			rootPtr := txn.Root(conn.RootName)
+			if _, rootRefs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
 				return nil, err
-			}
-			refs, err := rootObj.References()
-			if err != nil {
-				return nil, err
-			}
-			for _, account := range refs {
-				val, err := account.Value()
-				if err != nil {
-					return nil, err
+			} else {
+				for _, account := range rootRefs {
+					if val, _, err := txn.Read(account); err != nil || txn.RestartNeeded() {
+						return nil, err
+					} else {
+						sum += binary.BigEndian.Uint64(val)
+					}
 				}
-				sum += binary.BigEndian.Uint64(val)
+				return sum, nil
 			}
-			return sum, nil
 		})
 		conn.MaybeFatal(err)
 		foundWealth := res.(uint64)
@@ -97,12 +86,17 @@ func observeTotalWealth(conn *harness.Connection, totalWealth uint64, terminate 
 		} else {
 			conn.Log("wealth", foundWealth)
 		}
+		select {
+		case <-terminate:
+			return
+		default:
+		}
 	}
 }
 
-func runTransfers(accounts int, conn *harness.Connection, rootVsn *common.TxnId, transferCount int, totalWealth uint64, startBarrier *sync.WaitGroup) error {
+func runTransfers(accounts int, conn *harness.Connection, guidBuf []byte, transferCount int, totalWealth uint64, startBarrier *sync.WaitGroup) error {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	err := conn.AwaitRootVersionChange(rootVsn)
+	rootRefs, err := conn.AwaitRootVersionChange(guidBuf, accounts)
 	startBarrier.Done()
 	if err != nil {
 		return err
@@ -117,39 +111,30 @@ func runTransfers(accounts int, conn *harness.Connection, rootVsn *common.TxnId,
 		if to >= from {
 			to++
 		}
-		_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := conn.GetRootObject(txn)
-			if err != nil {
+		_, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+			fromAccount := rootRefs[from]
+			toAccount := rootRefs[to]
+			if fromVal, _, err := txn.Read(fromAccount); err != nil || txn.RestartNeeded() {
 				return nil, err
-			}
-			accountObjs, err := rootObj.References()
-			if err != nil {
+			} else if toVal, _, err := txn.Read(toAccount); err != nil || txn.RestartNeeded() {
 				return nil, err
+			} else {
+				fromWealth := int64(binary.BigEndian.Uint64(fromVal))
+				toWealth := int64(binary.BigEndian.Uint64(toVal))
+				if fromWealth == 0 {
+					return nil, nil
+				}
+				transfer := rng.Int63n(fromWealth + 1)
+				fromWealth -= transfer
+				toWealth += transfer
+				binary.BigEndian.PutUint64(fromVal, uint64(fromWealth))
+				binary.BigEndian.PutUint64(toVal, uint64(toWealth))
+				if err = txn.Write(fromAccount, fromVal); err != nil || txn.RestartNeeded() {
+					return nil, err
+				} else {
+					return nil, txn.Write(toAccount, toVal)
+				}
 			}
-			fromAccount := accountObjs[from]
-			toAccount := accountObjs[to]
-			fromVal, err := fromAccount.Value()
-			if err != nil {
-				return nil, err
-			}
-			toVal, err := toAccount.Value()
-			if err != nil {
-				return nil, err
-			}
-			fromWealth := int64(binary.BigEndian.Uint64(fromVal))
-			toWealth := int64(binary.BigEndian.Uint64(toVal))
-			if fromWealth == 0 {
-				return nil, nil
-			}
-			transfer := rng.Int63n(fromWealth)
-			fromWealth -= transfer
-			toWealth += transfer
-			binary.BigEndian.PutUint64(fromVal, uint64(fromWealth))
-			binary.BigEndian.PutUint64(toVal, uint64(toWealth))
-			if err = fromAccount.Set(fromVal); err != nil {
-				return nil, err
-			}
-			return nil, toAccount.Set(toVal)
 		})
 		if err != nil {
 			return err

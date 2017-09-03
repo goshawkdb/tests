@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"goshawkdb.io/client"
-	"goshawkdb.io/common"
 	"goshawkdb.io/tests/harness"
 	"sync"
 )
@@ -13,17 +12,18 @@ import (
 func WriteSkew(th *harness.TestHelper) {
 	parIncrs := 8
 	parReset := 4
-	iterations := 500
+	iterations := 1000
 
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
-	rootVsn, _ := conn.SetRootToNZeroObjs(2)
+	guidBuf, err := conn.SetRootToNZeroObjs(2)
+	th.MaybeFatal(err)
 
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(parIncrs + parReset)
 	endBarrierIncrs, errChIncrs := th.InParallel(parIncrs, func(connIdx int, conn *harness.Connection) error {
-		return incr(connIdx, conn, rootVsn, iterations, startBarrier)
+		return incr(connIdx, 2, conn, guidBuf, iterations, startBarrier)
 	})
 
 	go func() {
@@ -32,7 +32,7 @@ func WriteSkew(th *harness.TestHelper) {
 	}()
 
 	endBarrierReset, errChReset := th.InParallel(parReset, func(connIdx int, conn *harness.Connection) error {
-		return reset(conn, rootVsn, startBarrier, errChIncrs)
+		return reset(conn, 2, guidBuf, startBarrier, errChIncrs)
 	})
 
 	go func() {
@@ -43,8 +43,8 @@ func WriteSkew(th *harness.TestHelper) {
 	th.MaybeFatal(<-errChReset)
 }
 
-func incr(connNum int, conn *harness.Connection, rootVsn *common.TxnId, itrs int, startBarrier *sync.WaitGroup) error {
-	err := conn.AwaitRootVersionChange(rootVsn)
+func incr(connNum, objCount int, conn *harness.Connection, guidBuf []byte, itrs int, startBarrier *sync.WaitGroup) error {
+	rootRefs, err := conn.AwaitRootVersionChange(guidBuf, objCount)
 	startBarrier.Done()
 	if err != nil {
 		return err
@@ -54,33 +54,23 @@ func incr(connNum int, conn *harness.Connection, rootVsn *common.TxnId, itrs int
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, 1)
 	for ; itrs > 0; itrs-- {
-		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := conn.GetRootObject(txn)
-			if err != nil {
+		res, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+			if xVal, _, err := txn.Read(rootRefs[0]); err != nil || txn.RestartNeeded() {
 				return nil, err
-			}
-			objs, err := rootObj.References()
-			if err != nil {
+			} else if yVal, _, err := txn.Read(rootRefs[1]); err != nil || txn.RestartNeeded() {
 				return nil, err
-			}
-			xVal, err := objs[0].Value()
-			if err != nil {
-				return nil, err
-			}
-			yVal, err := objs[1].Value()
-			if err != nil {
-				return nil, err
-			}
-			x := binary.BigEndian.Uint64(xVal)
-			y := binary.BigEndian.Uint64(yVal)
-			switch {
-			case x == 0 && y == 0:
-				z := objs[incrIdx]
-				return false, z.Set(buf)
-			case x == 1 && y == 1:
-				return true, nil
-			default:
-				return client.Retry, nil
+			} else {
+				x := binary.BigEndian.Uint64(xVal)
+				y := binary.BigEndian.Uint64(yVal)
+				switch {
+				case x == 0 && y == 0:
+					z := rootRefs[incrIdx]
+					return false, txn.Write(z, buf)
+				case x == 1 && y == 1:
+					return true, nil
+				default:
+					return nil, txn.Retry()
+				}
 			}
 		})
 		if err != nil {
@@ -93,8 +83,8 @@ func incr(connNum int, conn *harness.Connection, rootVsn *common.TxnId, itrs int
 	return nil
 }
 
-func reset(conn *harness.Connection, rootVsn *common.TxnId, startBarrier *sync.WaitGroup, terminate chan error) error {
-	err := conn.AwaitRootVersionChange(rootVsn)
+func reset(conn *harness.Connection, objCount int, guidBuf []byte, startBarrier *sync.WaitGroup, terminate chan error) error {
+	rootRefs, err := conn.AwaitRootVersionChange(guidBuf, objCount)
 	startBarrier.Done()
 	if err != nil {
 		return err
@@ -102,44 +92,31 @@ func reset(conn *harness.Connection, rootVsn *common.TxnId, startBarrier *sync.W
 	startBarrier.Wait()
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, 0)
-	for {
-		select {
-		case <-terminate:
-			return nil
-		default:
-		}
-		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := conn.GetRootObject(txn)
-			if err != nil {
+	finished := false
+	for !finished {
+		res, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+			if xVal, _, err := txn.Read(rootRefs[0]); err != nil || txn.RestartNeeded() {
 				return nil, err
-			}
-			objs, err := rootObj.References()
-			if err != nil {
+			} else if yVal, _, err := txn.Read(rootRefs[1]); err != nil || txn.RestartNeeded() {
 				return nil, err
-			}
-			xVal, err := objs[0].Value()
-			if err != nil {
-				return nil, err
-			}
-			yVal, err := objs[1].Value()
-			if err != nil {
-				return nil, err
-			}
-			x := binary.BigEndian.Uint64(xVal)
-			y := binary.BigEndian.Uint64(yVal)
-			switch {
-			case x == 1 && y == 1:
-				return true, nil
-			case x == 1:
-				return false, objs[0].Set(buf)
-			case y == 1:
-				return false, objs[1].Set(buf)
-			default:
-				select {
-				case <-terminate: // don't retry if the incrs have all finished
-					return false, nil
+			} else {
+				x := binary.BigEndian.Uint64(xVal)
+				y := binary.BigEndian.Uint64(yVal)
+				switch {
+				case x == 1 && y == 1:
+					return true, nil
+				case x == 1:
+					return false, txn.Write(rootRefs[0], buf)
+				case y == 1:
+					return false, txn.Write(rootRefs[1], buf)
 				default:
-					return client.Retry, nil
+					select {
+					case <-terminate: // don't retry if the incrs have all finished
+						finished = true
+						return false, nil
+					default:
+						return nil, txn.Retry()
+					}
 				}
 			}
 		})
@@ -150,4 +127,5 @@ func reset(conn *harness.Connection, rootVsn *common.TxnId, startBarrier *sync.W
 			return fmt.Errorf("Discovered both x and y are 1!")
 		}
 	}
+	return nil
 }
