@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"goshawkdb.io/client"
-	"goshawkdb.io/common"
 	"goshawkdb.io/tests/harness"
 	"sync"
 	"time"
@@ -19,11 +18,12 @@ func StrongSerializable(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
-	vsn, _ := conn.SetRootToNZeroObjs(par + par)
+	guidBuf, err := conn.SetRootToNZeroObjs(par + par)
+	th.MaybeFatal(err)
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(par)
 	endBarrier, errCh := th.InParallel(par, func(connIdx int, conn *harness.Connection) error {
-		return runTest(connIdx, conn, vsn, iterations, startBarrier)
+		return runTest(connIdx, conn, par+par, guidBuf, iterations, startBarrier)
 	})
 	go func() {
 		endBarrier.Wait()
@@ -32,52 +32,28 @@ func StrongSerializable(th *harness.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func runTest(connNum int, conn *harness.Connection, vsn *common.TxnId, iterations int, startBarrier *sync.WaitGroup) error {
-	err := conn.AwaitRootVersionChange(vsn)
+func runTest(connNum int, conn *harness.Connection, objCount int, guidBuf []byte, iterations int, startBarrier *sync.WaitGroup) error {
+	rootRefs, err := conn.AwaitRootVersionChange(guidBuf, objCount)
 	startBarrier.Done()
 	if err != nil {
 		return err
 	}
 	startBarrier.Wait()
 	buf := make([]byte, 8)
-	res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := conn.GetRootObject(txn)
-		if err != nil {
-			return nil, err
-		}
-		objRefs, err := rootObj.References()
-		if err != nil {
-			return nil, err
-		}
-		return []client.ObjectRef{objRefs[connNum+connNum], objRefs[connNum+connNum+1]}, nil
-	})
-	if err != nil {
-		return err
-	}
-	objRefs, ok := res.([]client.ObjectRef)
-	if !ok {
-		return fmt.Errorf("Returned result is not a [] var uuid!")
-	}
+	objRefs := []client.RefCap{rootRefs[connNum+connNum], rootRefs[connNum+connNum+1]}
 	for ; iterations > 0; iterations-- {
 		time.Sleep(11 * time.Millisecond)
 		n := uint64(iterations)
 		binary.BigEndian.PutUint64(buf, n)
-		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			objA, err := txn.GetObject(objRefs[0])
-			if err != nil {
+		// set both objs to some value n
+		_, err = conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+			if err = txn.Write(objRefs[0], buf); err != nil || txn.RestartNeeded() {
 				return nil, err
-			}
-			objB, err := txn.GetObject(objRefs[1])
-			if err != nil {
+			} else if err = txn.Write(objRefs[1], buf); err != nil || txn.RestartNeeded() {
 				return nil, err
+			} else {
+				return nil, nil
 			}
-			if err = objA.Set(buf); err != nil {
-				return nil, err
-			}
-			if err = objB.Set(buf); err != nil {
-				return nil, err
-			}
-			return nil, nil
 		})
 		if err != nil {
 			return err
@@ -85,38 +61,29 @@ func runTest(connNum int, conn *harness.Connection, vsn *common.TxnId, iteration
 		time.Sleep(7 * time.Millisecond)
 		n++
 		binary.BigEndian.PutUint64(buf, n)
-		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			objA, err := txn.GetObject(objRefs[0])
-			if err != nil {
-				return nil, err
-			}
-			return nil, objA.Set(buf)
+		// set obj0 to n+1
+		_, err = conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+			return nil, txn.Write(objRefs[0], buf)
 		})
 		if err != nil {
 			return err
 		}
 		n++
 		binary.BigEndian.PutUint64(buf, n)
-		_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			objA, err := txn.GetObject(objRefs[0])
-			if err != nil {
-				return nil, err
-			}
-			return nil, objA.Set(buf)
+		// set obj0 to n+2
+		_, err = conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+			return nil, txn.Write(objRefs[0], buf)
 		})
 		if err != nil {
 			return err
 		}
-		res, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			objA, err := txn.GetObject(objRefs[0])
-			if err != nil {
+		// now read obj2 and hope that the last two writes haven't been reordered
+		res, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+			if val, _, err := txn.Read(objRefs[0]); err != nil || txn.RestartNeeded() {
 				return nil, err
+			} else {
+				return binary.BigEndian.Uint64(val), nil
 			}
-			val, err := objA.Value()
-			if err != nil {
-				return nil, err
-			}
-			return binary.BigEndian.Uint64(val), nil
 		})
 		if err != nil {
 			return err

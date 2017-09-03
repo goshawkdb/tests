@@ -10,6 +10,7 @@ scrape_configs:
       ca_file: 'clusterCert.pem'
       cert_file: 'clientCert.pem'
       key_file: 'clientCert.pem'
+    metrics_path: '/system:prometheus'
     static_configs:
       - targets:
-          - 'localhost:7896'
+          - 'localhost:8080'
