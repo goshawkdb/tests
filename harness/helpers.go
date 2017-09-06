@@ -204,7 +204,7 @@ func (conn *Connection) AwaitRootVersionChange(guidBuf []byte, expectedPtrs int)
 		} else if !bytes.Equal(val, guidBuf) {
 			return nil, txn.Retry()
 		} else if len(refs) != expectedPtrs {
-			return nil, fmt.Errorf("Expected %d ptr from root. Found %d", expectedPtrs, len(refs))
+			return nil, txn.Retry()
 		} else {
 			refCaps = refs
 			return nil, nil
