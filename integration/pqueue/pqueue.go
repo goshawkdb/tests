@@ -3,22 +3,22 @@ package pqueue
 import (
 	"encoding/binary"
 	"goshawkdb.io/client"
-	"goshawkdb.io/common"
 	"goshawkdb.io/tests/harness"
 	"sync"
 )
 
 func PQueue(th *harness.TestHelper) {
-	parCount := 16
+	parCount := 12
 	limit := uint64(1000)
 	conn := th.CreateConnections(1)[0]
 
 	defer th.Shutdown()
-	vsn, _ := conn.SetRootToNZeroObjs(parCount)
+	guidBuf, err := conn.SetRootToNZeroObjs(parCount)
+	th.MaybeFatal(err)
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(parCount)
 	endBarrier, errCh := th.InParallel(parCount, func(idx int, conn *harness.Connection) error {
-		return runEnqueue(idx, conn, vsn, limit, startBarrier)
+		return runEnqueue(idx, parCount, conn, guidBuf, limit, startBarrier)
 	})
 	go func() {
 		endBarrier.Wait()
@@ -27,55 +27,34 @@ func PQueue(th *harness.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func runEnqueue(connIdx int, conn *harness.Connection, rootVsn *common.TxnId, limit uint64, startBarrier *sync.WaitGroup) error {
-	err := conn.AwaitRootVersionChange(rootVsn)
+func runEnqueue(connIdx, parCount int, conn *harness.Connection, guidBuf []byte, limit uint64, startBarrier *sync.WaitGroup) error {
+	rootRefs, err := conn.AwaitRootVersionChange(guidBuf, parCount)
 	startBarrier.Done()
 	if err != nil {
 		return err
 	}
 	startBarrier.Wait()
-	var myObjRef client.ObjectRef
-	_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObj, err := conn.GetRootObject(txn)
-		if err != nil {
-			return nil, err
-		}
-		refs, err := rootObj.References()
-		if err != nil {
-			return nil, err
-		}
-		myObjRef = refs[connIdx]
-		return nil, nil
-	})
-	if err != nil {
-		return err
-	}
+	myObjRef := rootRefs[connIdx]
 
 	val := make([]byte, 8)
 	for ; limit > 1; limit-- {
 		binary.BigEndian.PutUint64(val, limit)
-		_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			root, err := txn.GetObject(myObjRef)
-			if err != nil {
+		_, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+			if rootVal, rootRefs, err := txn.Read(myObjRef); err != nil || txn.RestartNeeded() {
 				return nil, err
-			}
-			rootVal, rootRefs, err := root.ValueReferences()
-			if err != nil {
-				return nil, err
-			}
-			if len(rootRefs) == 0 {
-				newHead, err := txn.CreateObject(val)
-				if err != nil {
+			} else if len(rootRefs) == 0 {
+				if newHead, err := txn.Create(val); err != nil || txn.RestartNeeded() {
 					return nil, err
+				} else {
+					return nil, txn.Write(myObjRef, rootVal, newHead)
 				}
-				return nil, root.Set(rootVal, newHead)
 			} else {
 				oldHead := rootRefs[0]
-				newHead, err := txn.CreateObject(val, oldHead)
-				if err != nil {
+				if newHead, err := txn.Create(val, oldHead); err != nil || txn.RestartNeeded() {
 					return nil, err
+				} else {
+					return nil, txn.Write(myObjRef, rootVal, newHead)
 				}
-				return nil, root.Set(rootVal, newHead)
 			}
 		})
 		if err != nil {
