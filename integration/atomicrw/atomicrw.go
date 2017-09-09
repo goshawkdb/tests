@@ -113,8 +113,8 @@ func runObserver(conn *harness.Connection, terminate chan struct{}) {
 		default:
 			time.Sleep(2 * time.Millisecond)
 			res, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
-				rootPtr := txn.Root(conn.RootName)
-				if _, rootRefs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+				rootPtr, _ := txn.Root(conn.RootName)
+				if _, rootRefs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 					return nil, err
 				} else {
 					xObj := rootRefs[0]

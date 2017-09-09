@@ -10,15 +10,14 @@ import (
 
 func createObjOffRoot(c *harness.Connection, cap *common.Capability, value []byte) {
 	_, err := c.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(c.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(c.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c.RootName)
 		} else {
 			objPtr, err := txn.Create(value)
 			if err != nil {
 				return nil, err
 			}
-			return nil, txn.Write(*rootPtr, []byte{}, objPtr.GrantCapability(cap))
+			return nil, txn.Write(rootPtr, []byte{}, objPtr.GrantCapability(cap))
 		}
 	})
 	if err != nil {
@@ -28,10 +27,9 @@ func createObjOffRoot(c *harness.Connection, cap *common.Capability, value []byt
 
 func attemptRead(c *harness.Connection, refsLen, refsIdx int, refCap, objCap *common.Capability, value []byte) {
 	result, err := c.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(c.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(c.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c.RootName)
-		} else if _, refs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		} else if _, refs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else if len(refs) != refsLen {
 			return nil, fmt.Errorf("Expected root to have %d reference; got %d", refsLen, len(refs))
@@ -75,10 +73,9 @@ func attemptRead(c *harness.Connection, refsLen, refsIdx int, refCap, objCap *co
 
 func attemptWrite(c *harness.Connection, refsLen, refsIdx int, refCap, objCap *common.Capability, value []byte) {
 	_, err := c.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(c.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(c.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c.RootName)
-		} else if _, refs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		} else if _, refs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else if len(refs) != refsLen {
 			return nil, fmt.Errorf("Expected root to have %d reference; got %d", refsLen, len(refs))
@@ -185,16 +182,15 @@ func fakeRead(th *harness.TestHelper) {
 	// locally and write it back into the root. Of course, the server
 	// should reject the txn:
 	_, err := c2.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(c2.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(c2.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c2.RootName)
-		} else if _, refs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		} else if _, refs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else if len(refs) != 1 {
 			return nil, fmt.Errorf("Expected root to have 1 reference; got %v", len(refs))
 		} else {
 			objPtr := refs[0]
-			return nil, txn.Write(*rootPtr, nil, objPtr.GrantCapability(common.ReadOnlyCapability))
+			return nil, txn.Write(rootPtr, nil, objPtr.GrantCapability(common.ReadOnlyCapability))
 		}
 	})
 	if err == nil {
@@ -219,16 +215,15 @@ func fakeWrite(th *harness.TestHelper) {
 	// locally and write it back into the root. Of course, the server
 	// should reject the txn:
 	_, err := c2.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(c2.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(c2.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c2.RootName)
-		} else if _, refs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		} else if _, refs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else if len(refs) != 1 {
 			return nil, fmt.Errorf("Expected root to have 1 reference; got %v", len(refs))
 		} else {
 			objPtr := refs[0]
-			return nil, txn.Write(*rootPtr, nil, objPtr.GrantCapability(common.WriteOnlyCapability))
+			return nil, txn.Write(rootPtr, nil, objPtr.GrantCapability(common.WriteOnlyCapability))
 		}
 	})
 	if err == nil {
@@ -254,8 +249,7 @@ func capabilitiesCanGrowSingleTxn(th *harness.TestHelper) {
 	// should immediately learn that obj1 is read-write.
 
 	_, err := c1.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(c1.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(c1.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c1.RootName)
 		} else {
 			obj1Ptr, err := txn.Create([]byte("Hello World"))
@@ -270,7 +264,7 @@ func capabilitiesCanGrowSingleTxn(th *harness.TestHelper) {
 			if err != nil || txn.RestartNeeded() {
 				return nil, err
 			}
-			return nil, txn.Write(*rootPtr, nil, obj3Ptr, obj1Ptr.GrantCapability(common.NoneCapability))
+			return nil, txn.Write(rootPtr, nil, obj3Ptr, obj1Ptr.GrantCapability(common.NoneCapability))
 		}
 	})
 	if err != nil {
@@ -301,8 +295,7 @@ func capabilitiesCanGrowMultiTxn(th *harness.TestHelper) {
 
 	// txn1: create all the objs, but only have root point to obj1.
 	_, err := c1.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(c1.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(c1.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c1.RootName)
 		} else {
 			obj1Ptr, err := txn.Create([]byte("Hello World"))
@@ -317,7 +310,7 @@ func capabilitiesCanGrowMultiTxn(th *harness.TestHelper) {
 			if err != nil || txn.RestartNeeded() {
 				return nil, err
 			}
-			return nil, txn.Write(*rootPtr, nil, obj3Ptr, obj1Ptr.GrantCapability(common.NoneCapability))
+			return nil, txn.Write(rootPtr, nil, obj3Ptr, obj1Ptr.GrantCapability(common.NoneCapability))
 		}
 	})
 	if err != nil {
@@ -325,10 +318,9 @@ func capabilitiesCanGrowMultiTxn(th *harness.TestHelper) {
 	}
 	// txn2: add the read pointer from obj3 to obj1
 	_, err = c1.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(c1.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(c1.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c1.RootName)
-		} else if _, rootRefs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		} else if _, rootRefs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else {
 			obj3Ptr := rootRefs[0]
@@ -345,10 +337,9 @@ func capabilitiesCanGrowMultiTxn(th *harness.TestHelper) {
 	}
 	// txn3: add the write pointer from obj2 to obj1
 	_, err = c1.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(c1.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(c1.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c1.RootName)
-		} else if _, rootRefs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		} else if _, rootRefs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else {
 			obj3Ptr := rootRefs[0]
@@ -371,10 +362,9 @@ func capabilitiesCanGrowMultiTxn(th *harness.TestHelper) {
 	attemptRead(c2, 2, 1, common.NoneCapability, common.ReadOnlyCapability, []byte("Hello World"))
 	// finally, if c2 reads to obj2 then we should discover we can actually write obj1
 	_, err = c2.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(c2.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(c2.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c2.RootName)
-		} else if _, rootRefs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		} else if _, rootRefs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else {
 			obj3Ptr := rootRefs[0]

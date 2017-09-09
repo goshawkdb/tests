@@ -212,12 +212,12 @@ func createSkipList(conn *harness.Connection) *sk.SkipList {
 	result, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
 		if sl, err := sk.NewSkipList(txn, rng); err != nil || txn.RestartNeeded() {
 			return nil, err
-		} else if rootPtr := txn.Root(conn.RootName); rootPtr == nil {
+		} else if rootPtr, found := txn.Root(conn.RootName); !found {
 			return nil, errors.New("No such root")
-		} else if rootVal, _, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		} else if rootVal, _, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else {
-			return sl, txn.Write(*rootPtr, rootVal, sl.ObjPtr)
+			return sl, txn.Write(rootPtr, rootVal, sl.ObjPtr)
 		}
 	})
 	conn.MaybeFatal(err)

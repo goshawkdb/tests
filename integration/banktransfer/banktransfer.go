@@ -22,8 +22,8 @@ func BankTransfer(th *harness.TestHelper) {
 	guidBuf, err := conn.SetRootToNZeroObjs(accounts)
 	th.MaybeFatal(err)
 	_, err = conn.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(conn.RootName)
-		if _, rootRefs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		rootPtr, _ := txn.Root(conn.RootName)
+		if _, rootRefs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else {
 			buf := make([]byte, 8)
@@ -65,8 +65,8 @@ func observeTotalWealth(conn *harness.Connection, totalWealth uint64, terminate 
 		time.Sleep(15 * time.Millisecond)
 		res, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
 			sum := uint64(0)
-			rootPtr := txn.Root(conn.RootName)
-			if _, rootRefs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+			rootPtr, _ := txn.Root(conn.RootName)
+			if _, rootRefs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 				return nil, err
 			} else {
 				for _, account := range rootRefs {

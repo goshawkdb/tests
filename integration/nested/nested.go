@@ -14,15 +14,15 @@ func NestedRead(th *harness.TestHelper) {
 
 	// Just read the root var from several nested txns
 	result, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr0 := txn.Root(conn.RootName)
+		rootPtr0, _ := txn.Root(conn.RootName)
 		result, err := txn.Transact(func(txn *client.Transaction) (interface{}, error) {
-			rootPtr1 := txn.Root(conn.RootName)
-			if !rootPtr0.SameReferent(*rootPtr1) {
+			rootPtr1, _ := txn.Root(conn.RootName)
+			if !rootPtr0.SameReferent(rootPtr1) {
 				return nil, fmt.Errorf("Should have pointers to the same object in nested txns")
 			}
 			result, err := txn.Transact(func(txn *client.Transaction) (interface{}, error) {
-				rootPtr2 := txn.Root(conn.RootName)
-				if !rootPtr0.SameReferent(*rootPtr2) {
+				rootPtr2, _ := txn.Root(conn.RootName)
+				if !rootPtr0.SameReferent(rootPtr2) {
 					return nil, fmt.Errorf("Should have pointers to the same object in nested txns")
 				}
 				return 42, nil
@@ -55,32 +55,32 @@ func NestedWrite(th *harness.TestHelper) {
 
 	// A write made in a parent should be visible in the child
 	_, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr0 := txn.Root(conn.RootName)
-		if err := txn.Write(*rootPtr0, []byte("from outer")); err != nil || txn.RestartNeeded() {
+		rootPtr0, _ := txn.Root(conn.RootName)
+		if err := txn.Write(rootPtr0, []byte("from outer")); err != nil || txn.RestartNeeded() {
 			return nil, err
 		}
 		_, err := txn.Transact(func(txn *client.Transaction) (interface{}, error) {
-			rootPtr1 := txn.Root(conn.RootName)
-			if val, _, err := txn.Read(*rootPtr1); err != nil || txn.RestartNeeded() {
+			rootPtr1, _ := txn.Root(conn.RootName)
+			if val, _, err := txn.Read(rootPtr1); err != nil || txn.RestartNeeded() {
 				return nil, err
 			} else if str := string(val); str != "from outer" {
 				return nil, fmt.Errorf("Expected value to be 'from outer', but it was '%s'", str)
-			} else if err = txn.Write(*rootPtr1, []byte("from mid")); err != nil || txn.RestartNeeded() {
+			} else if err = txn.Write(rootPtr1, []byte("from mid")); err != nil || txn.RestartNeeded() {
 				return nil, err
 			}
 			_, err := txn.Transact(func(txn *client.Transaction) (interface{}, error) {
-				rootPtr2 := txn.Root(conn.RootName)
-				if val, _, err := txn.Read(*rootPtr2); err != nil || txn.RestartNeeded() {
+				rootPtr2, _ := txn.Root(conn.RootName)
+				if val, _, err := txn.Read(rootPtr2); err != nil || txn.RestartNeeded() {
 					return nil, err
 				} else if str := string(val); str != "from mid" {
 					return nil, fmt.Errorf("Expected value to be 'from mid', but it was '%s'", str)
 				} else {
-					return nil, txn.Write(*rootPtr2, []byte("from inner"))
+					return nil, txn.Write(rootPtr2, []byte("from inner"))
 				}
 			})
 			if err != nil {
 				return nil, err
-			} else if val, _, err := txn.Read(*rootPtr1); err != nil || txn.RestartNeeded() {
+			} else if val, _, err := txn.Read(rootPtr1); err != nil || txn.RestartNeeded() {
 				return nil, err
 			} else if str := string(val); str != "from inner" {
 				return nil, fmt.Errorf("On return, expected value to be 'from inner', but it was '%s'", str)
@@ -90,7 +90,7 @@ func NestedWrite(th *harness.TestHelper) {
 		})
 		if err != nil {
 			return nil, err
-		} else if val, _, err := txn.Read(*rootPtr0); err != nil {
+		} else if val, _, err := txn.Read(rootPtr0); err != nil {
 			return nil, err
 		} else if str := string(val); str != "from inner" {
 			return nil, fmt.Errorf("On return, expected value to be 'from inner', but it was '%s'", str)
@@ -108,26 +108,26 @@ func NestedInnerAbort(th *harness.TestHelper) {
 	// A write made in a child which is aborted should not be seen in
 	// the parent
 	_, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr0 := txn.Root(conn.RootName)
-		if err := txn.Write(*rootPtr0, []byte("from outer")); err != nil {
+		rootPtr0, _ := txn.Root(conn.RootName)
+		if err := txn.Write(rootPtr0, []byte("from outer")); err != nil {
 			return nil, err
 		}
 		_, err := txn.Transact(func(txn *client.Transaction) (interface{}, error) {
-			rootPtr1 := txn.Root(conn.RootName)
-			if val, _, err := txn.Read(*rootPtr1); err != nil || txn.RestartNeeded() {
+			rootPtr1, _ := txn.Root(conn.RootName)
+			if val, _, err := txn.Read(rootPtr1); err != nil || txn.RestartNeeded() {
 				return nil, err
 			} else if str := string(val); str != "from outer" {
 				return nil, fmt.Errorf("Expected value to be 'from outer', but it was '%s'", str)
-			} else if err = txn.Write(*rootPtr1, []byte("from mid")); err != nil || txn.RestartNeeded() {
+			} else if err = txn.Write(rootPtr1, []byte("from mid")); err != nil || txn.RestartNeeded() {
 				return nil, err
 			}
 			_, err := txn.Transact(func(txn *client.Transaction) (interface{}, error) {
-				rootPtr2 := txn.Root(conn.RootName)
-				if val, _, err := txn.Read(*rootPtr2); err != nil || txn.RestartNeeded() {
+				rootPtr2, _ := txn.Root(conn.RootName)
+				if val, _, err := txn.Read(rootPtr2); err != nil || txn.RestartNeeded() {
 					return nil, err
 				} else if str := string(val); str != "from mid" {
 					return nil, fmt.Errorf("Expected value to be 'from mid', but it was '%s'", str)
-				} else if err = txn.Write(*rootPtr2, []byte("from inner")); err != nil || txn.RestartNeeded() {
+				} else if err = txn.Write(rootPtr2, []byte("from inner")); err != nil || txn.RestartNeeded() {
 					return nil, err
 				} else {
 					return nil, txn.Abort()
@@ -136,7 +136,7 @@ func NestedInnerAbort(th *harness.TestHelper) {
 			if err != nil {
 				return nil, err
 			}
-			if val, _, err := txn.Read(*rootPtr1); err != nil || txn.RestartNeeded() {
+			if val, _, err := txn.Read(rootPtr1); err != nil || txn.RestartNeeded() {
 				return nil, err
 			} else if str := string(val); str != "from mid" {
 				return nil, fmt.Errorf("On return, expected value to be 'from mid', but it was '%s'", str)
@@ -147,7 +147,7 @@ func NestedInnerAbort(th *harness.TestHelper) {
 		if err != nil {
 			return nil, err
 		}
-		if val, _, err := txn.Read(*rootPtr0); err != nil || txn.RestartNeeded() {
+		if val, _, err := txn.Read(rootPtr0); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else if str := string(val); str != "from mid" {
 			return nil, fmt.Errorf("On return, expected value to be 'from mid', but it was '%s'", str)
@@ -222,7 +222,7 @@ func NestedInnerCreate(th *harness.TestHelper) {
 	// A create made in a child, returned to the parent should both be
 	// directly usable and writable.
 	_, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(conn.RootName)
+		rootPtr, _ := txn.Root(conn.RootName)
 		var ptr client.RefCap
 		_, err := txn.Transact(func(txn *client.Transaction) (interface{}, error) {
 			_, err := txn.Transact(func(txn *client.Transaction) (interface{}, error) {
@@ -230,13 +230,13 @@ func NestedInnerCreate(th *harness.TestHelper) {
 				if ptr, err = txn.Create([]byte("Hello")); err != nil || txn.RestartNeeded() {
 					return nil, err
 				} else {
-					return nil, txn.Write(*rootPtr, nil, ptr)
+					return nil, txn.Write(rootPtr, nil, ptr)
 				}
 			})
 			if err != nil {
 				return nil, err
 			}
-			if _, rootRefs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+			if _, rootRefs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 				return nil, err
 			} else if !rootRefs[0].SameReferent(ptr) {
 				return nil, fmt.Errorf("On return, expected to find obj in references of root")
@@ -253,8 +253,8 @@ func NestedInnerCreate(th *harness.TestHelper) {
 	th.MaybeFatal(err)
 
 	result, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(conn.RootName)
-		if _, rootRefs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		rootPtr, _ := txn.Root(conn.RootName)
+		if _, rootRefs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else if val, _, err := txn.Read(rootRefs[0]); err != nil || txn.RestartNeeded() {
 			return nil, err

@@ -21,11 +21,11 @@ func CompareConfigs(host string, provided *configuration.ConfigurationJSON, logg
 	defer c.ShutdownSync()
 
 	result, err := c.Transact(func(txn *client.Transaction) (interface{}, error) {
-		objPtr := txn.Root(server.ConfigRootName)
-		if objPtr == nil {
+		objPtr, found := txn.Root(server.ConfigRootName)
+		if !found {
 			return nil, fmt.Errorf("No such root (%s) found for this account.", server.ConfigRootName)
 		} else {
-			val, _, err := txn.Read(*objPtr)
+			val, _, err := txn.Read(objPtr)
 			return val, err
 		}
 	})

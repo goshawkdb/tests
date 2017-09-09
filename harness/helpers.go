@@ -175,8 +175,7 @@ func (conn *Connection) SetRootToNZeroObjs(n int) ([]byte, error) {
 	zeroBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(zeroBuf, 0)
 	_, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(conn.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(conn.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
 		} else {
 			ptrs := make([]client.RefCap, n)
@@ -187,7 +186,7 @@ func (conn *Connection) SetRootToNZeroObjs(n int) ([]byte, error) {
 				}
 				ptrs[idx] = objPtr
 			}
-			return nil, txn.Write(*rootPtr, guidBuf, ptrs...)
+			return nil, txn.Write(rootPtr, guidBuf, ptrs...)
 		}
 	})
 	return guidBuf, conn.MaybeFatal(err)
@@ -196,10 +195,9 @@ func (conn *Connection) SetRootToNZeroObjs(n int) ([]byte, error) {
 func (conn *Connection) AwaitRootVersionChange(guidBuf []byte, expectedPtrs int) ([]client.RefCap, error) {
 	var refCaps []client.RefCap
 	_, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
-		rootPtr := txn.Root(conn.RootName)
-		if rootPtr == nil {
+		if rootPtr, found := txn.Root(conn.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
-		} else if val, refs, err := txn.Read(*rootPtr); err != nil || txn.RestartNeeded() {
+		} else if val, refs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
 		} else if !bytes.Equal(val, guidBuf) {
 			return nil, txn.Retry()
