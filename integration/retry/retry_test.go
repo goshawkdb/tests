@@ -6,7 +6,7 @@ import (
 )
 
 func TestLoop(t *testing.T) {
-	for idx := 0; idx < 100; idx++ {
+	for idx := 0; idx < 20; idx++ {
 		TestSimpleRetry(t)
 		TestDisjointRetry(t)
 	}

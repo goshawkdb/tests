@@ -3,7 +3,6 @@ package atomicrw
 import (
 	"encoding/binary"
 	"goshawkdb.io/client"
-	"goshawkdb.io/common"
 	"goshawkdb.io/tests/harness"
 	"sync"
 	"time"
@@ -23,13 +22,14 @@ func AtomicRW(th *harness.TestHelper) {
 	conn := th.CreateConnections(1)[0]
 	defer th.Shutdown()
 
-	vsn, _ := conn.SetRootToNZeroObjs(2)
+	guidBuf, err := conn.SetRootToNZeroObjs(2)
+	th.MaybeFatal(err)
 
 	startBarrier := new(sync.WaitGroup)
 	startBarrier.Add(conns)
 
 	endBarrier, errCh := th.InParallel(conns, func(connIdx int, conn *harness.Connection) error {
-		return runTxn(conn, vsn, attempts, startBarrier)
+		return runTxn(conn, 2, guidBuf, attempts, startBarrier)
 	})
 
 	c := make(chan struct{})
@@ -45,69 +45,55 @@ func AtomicRW(th *harness.TestHelper) {
 	th.MaybeFatal(<-errCh)
 }
 
-func runTxn(conn *harness.Connection, rootVsn *common.TxnId, attempts int, startBarrier *sync.WaitGroup) error {
-	err := conn.AwaitRootVersionChange(rootVsn)
+func runTxn(conn *harness.Connection, objCount int, guidBuf []byte, attempts int, startBarrier *sync.WaitGroup) error {
+	rootRefs, err := conn.AwaitRootVersionChange(guidBuf, objCount)
 	startBarrier.Done()
 	if err != nil {
 		return err
 	}
 	startBarrier.Wait()
 	for ; attempts > 0; attempts-- {
-		time.Sleep(10 * time.Millisecond)
+		if attempts%500 == 0 {
+			conn.Log("attempts", attempts)
+		}
+		time.Sleep(2 * time.Millisecond)
 		if attempts%2 == 0 {
-			_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-				rootObj, err := conn.GetRootObject(txn)
-				if err != nil {
+			_, err = conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+				xObj := rootRefs[0]
+				yObj := rootRefs[1]
+				if xVal, _, err := txn.Read(xObj); err != nil || txn.RestartNeeded() {
 					return nil, err
-				}
-				objs, err := rootObj.References()
-				if err != nil {
-					return nil, err
-				}
-				xObj := objs[0]
-				yObj := objs[1]
-				xVal, err := xObj.Value()
-				if err != nil {
-					return nil, err
-				}
-				x := binary.BigEndian.Uint64(xVal)
-				binary.BigEndian.PutUint64(xVal, x+1)
-				if err = xObj.Set(xVal); err != nil {
-					return nil, err
-				}
-				if x%2 == 0 {
-					if err = yObj.Set(xVal); err != nil {
+				} else {
+					x := binary.BigEndian.Uint64(xVal)
+					binary.BigEndian.PutUint64(xVal, x+1)
+					if err = txn.Write(xObj, xVal); err != nil || txn.RestartNeeded() {
 						return nil, err
 					}
+					if x%2 == 0 {
+						return nil, txn.Write(yObj, xVal)
+					} else {
+						return nil, nil
+					}
 				}
-				return nil, nil
 			})
 			if err != nil {
 				return err
 			}
 		} else {
-			_, _, err = conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-				rootObj, err := conn.GetRootObject(txn)
-				if err != nil {
+			_, err = conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+				xObj := rootRefs[0]
+				yObj := rootRefs[1]
+				if xVal, _, err := txn.Read(xObj); err != nil || txn.RestartNeeded() {
 					return nil, err
-				}
-				objs, err := rootObj.References()
-				if err != nil {
-					return nil, err
-				}
-				xObj := objs[0]
-				yObj := objs[1]
-				xVal, err := xObj.Value()
-				if err != nil {
-					return nil, err
-				}
-				x := binary.BigEndian.Uint64(xVal)
-				if x%2 == 0 {
-					binary.BigEndian.PutUint64(xVal, x+2)
-					return nil, yObj.Set(xVal)
 				} else {
-					binary.BigEndian.PutUint64(xVal, x+1)
-					return nil, xObj.Set(xVal)
+					x := binary.BigEndian.Uint64(xVal)
+					if x%2 == 0 {
+						binary.BigEndian.PutUint64(xVal, x+2)
+						return nil, txn.Write(yObj, xVal)
+					} else {
+						binary.BigEndian.PutUint64(xVal, x+1)
+						return nil, txn.Write(xObj, xVal)
+					}
 				}
 			})
 			if err != nil {
@@ -125,39 +111,36 @@ func runObserver(conn *harness.Connection, terminate chan struct{}) {
 		case <-terminate:
 			return
 		default:
-		}
-		time.Sleep(10 * time.Millisecond)
-		res, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-			rootObj, err := conn.GetRootObject(txn)
-			if err != nil {
-				return nil, err
+			time.Sleep(2 * time.Millisecond)
+			res, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+				rootPtr, _ := txn.Root(conn.RootName)
+				if _, rootRefs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
+					return nil, err
+				} else {
+					xObj := rootRefs[0]
+					yObj := rootRefs[1]
+					if xVal, _, err := txn.Read(xObj); err != nil || txn.RestartNeeded() {
+						return nil, err
+					} else {
+						x = binary.BigEndian.Uint64(xVal)
+						if yVal, _, err := txn.Read(yObj); err != nil || txn.RestartNeeded() {
+							return nil, err
+						} else {
+							y = binary.BigEndian.Uint64(yVal)
+							if x%2 == 0 {
+								return nil, nil
+							} else {
+								// x is odd, so x should == y
+								return x == y, nil
+							}
+						}
+					}
+				}
+			})
+			conn.MaybeFatal(err)
+			if resBool, ok := res.(bool); ok && !resBool {
+				conn.Fatal("Observed x ==", x, "y ==", y)
 			}
-			objs, err := rootObj.References()
-			if err != nil {
-				return nil, err
-			}
-			xObj := objs[0]
-			yObj := objs[1]
-			xVal, err := xObj.Value()
-			if err != nil {
-				return nil, err
-			}
-			x = binary.BigEndian.Uint64(xVal)
-			yVal, err := yObj.Value()
-			if err != nil {
-				return nil, err
-			}
-			y = binary.BigEndian.Uint64(yVal)
-			if x%2 == 0 {
-				return nil, nil
-			} else {
-				// x is odd, so x should == y
-				return x == y, nil
-			}
-		})
-		conn.MaybeFatal(err)
-		if resBool, ok := res.(bool); ok && !resBool {
-			conn.Fatal("Observed x ==", x, "y ==", y)
 		}
 	}
 }

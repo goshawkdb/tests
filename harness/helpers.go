@@ -1,11 +1,12 @@
 package harness
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"github.com/go-kit/kit/log"
 	"goshawkdb.io/client"
-	"goshawkdb.io/common"
+	"math/rand"
 	"os"
 	"runtime"
 	"strings"
@@ -60,6 +61,7 @@ type TestHelper struct {
 	ClusterCert   []byte
 	ClientKeyPair []byte
 	RootName      string
+	Rng           *rand.Rand
 }
 
 type TestTAdaptor struct {
@@ -107,6 +109,7 @@ func NewHelper(t TestInterface) *TestHelper {
 		ClusterCert:   clusterCertBites,
 		ClientKeyPair: clientKeyPairBites,
 		RootName:      rootName,
+		Rng:           rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -126,12 +129,10 @@ func (th *TestHelper) CreateConnections(num int) []*Connection {
 		conn, err := client.NewConnection(host, th.ClientKeyPair, th.ClusterCert, logger)
 		th.MaybeFatal(err)
 		results[i] = &Connection{
-			TestHelper:              th,
-			Logger:                  logger,
-			Connection:              conn,
-			connIdx:                 offset + i,
-			submissionCount:         0,
-			totalSubmissionDuration: time.Duration(0),
+			TestHelper: th,
+			Logger:     logger,
+			Connection: conn,
+			connIdx:    offset + i,
 		}
 	}
 	th.connections = append(th.connections, results...)
@@ -140,7 +141,6 @@ func (th *TestHelper) CreateConnections(num int) []*Connection {
 
 func (th *TestHelper) Shutdown() {
 	for _, c := range th.connections {
-		c.Log("AverageSubmissionTime", c.AvgSubmissionTime(), "SubmissionsCount", c.submissionCount)
 		c.Connection.ShutdownSync()
 	}
 }
@@ -162,111 +162,53 @@ func (th *TestHelper) InParallel(n int, fun func(int, *Connection) error) (*sync
 	return endBarrier, errCh
 }
 
-func (th *TestHelper) GetRootObject(txn *client.Txn) (client.ObjectRef, error) {
-	rootObjs, err := txn.GetRootObjects()
-	if err != nil {
-		return client.ObjectRef{}, err
-	}
-	obj, found := rootObjs[th.RootName]
-	if !found {
-		return client.ObjectRef{}, fmt.Errorf("No root object named '%s' found", th.RootName)
-	}
-	return obj, nil
-}
-
 type Connection struct {
 	*TestHelper
 	log.Logger
 	*client.Connection
-	connIdx                 int
-	submissionCount         int
-	totalSubmissionDuration time.Duration
+	connIdx int
 }
 
-func (conn *Connection) RunTransaction(fun func(*client.Txn) (interface{}, error)) (interface{}, *common.TxnId, error) {
-	result, stats, err := conn.Connection.RunTransaction(fun)
-	conn.submissionCount += len(stats.Submissions)
-	if conn.submissionCount > 0 && conn.submissionCount%64 == 0 {
-		conn.Log("submissionCount", conn.submissionCount)
-	}
-	for _, s := range stats.Submissions {
-		conn.totalSubmissionDuration += s
-	}
-	return result, stats.TxnId, err
-}
-
-func (conn *Connection) SetRootToZeroUInt64() (*common.TxnId, error) {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, 0)
-	txnId, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObjs, err := txn.GetRootObjects()
-		if err != nil {
-			return nil, err
-		}
-		rootObj, found := rootObjs[conn.RootName]
-		if !found {
-			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
-		}
-		rootObj.Set(buf)
-		return rootObj.Version()
-	})
-	return txnId.(*common.TxnId), conn.MaybeFatal(err)
-}
-
-func (conn *Connection) SetRootToNZeroObjs(n int) (*common.TxnId, error) {
+func (conn *Connection) SetRootToNZeroObjs(n int) ([]byte, error) {
+	guidBuf := make([]byte, 8)
+	conn.Rng.Read(guidBuf)
 	zeroBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(zeroBuf, 0)
-	txnId, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObjs, err := txn.GetRootObjects()
-		if err != nil {
-			return nil, err
-		}
-		objs := make([]client.ObjectRef, n)
-		for idx := range objs {
-			obj, err := txn.CreateObject(zeroBuf)
-			if err != nil {
-				return nil, err
+	_, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+		if rootPtr, found := txn.Root(conn.RootName); !found {
+			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
+		} else {
+			ptrs := make([]client.RefCap, n)
+			for idx := range ptrs {
+				objPtr, err := txn.Create(zeroBuf)
+				if err != nil {
+					return nil, err
+				}
+				ptrs[idx] = objPtr
 			}
-			objs[idx] = obj
+			return nil, txn.Write(rootPtr, guidBuf, ptrs...)
 		}
-		rootObj, found := rootObjs[conn.RootName]
-		if !found {
-			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
-		}
-		if err := rootObj.Set([]byte{}, objs...); err != nil {
-			return nil, err
-		}
-		return rootObj.Version()
 	})
-	return txnId.(*common.TxnId), conn.MaybeFatal(err)
+	return guidBuf, conn.MaybeFatal(err)
 }
 
-func (conn *Connection) AwaitRootVersionChange(vsn *common.TxnId) error {
-	_, _, err := conn.RunTransaction(func(txn *client.Txn) (interface{}, error) {
-		rootObjs, err := txn.GetRootObjects()
-		if err != nil {
-			return nil, err
-		}
-		rootObj, found := rootObjs[conn.RootName]
-		if !found {
+func (conn *Connection) AwaitRootVersionChange(guidBuf []byte, expectedPtrs int) ([]client.RefCap, error) {
+	var refCaps []client.RefCap
+	_, err := conn.Transact(func(txn *client.Transaction) (interface{}, error) {
+		if rootPtr, found := txn.Root(conn.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", conn.RootName)
-		}
-		if rootVsn, err := rootObj.Version(); err != nil {
+		} else if val, refs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
 			return nil, err
-		} else if vsn.Compare(rootVsn) == common.EQ {
-			return client.Retry, nil
+		} else if !bytes.Equal(val, guidBuf) {
+			return nil, txn.Retry()
+		} else if len(refs) != expectedPtrs {
+			return nil, txn.Retry()
+		} else {
+			refCaps = refs
+			return nil, nil
 		}
-		return nil, nil
 	})
-	return conn.MaybeFatal(err)
-}
-
-func (conn *Connection) AvgSubmissionTime() time.Duration {
-	if conn.submissionCount == 0 {
-		return time.Duration(0)
-	} else {
-		return conn.totalSubmissionDuration / time.Duration(conn.submissionCount)
-	}
+	return refCaps, conn.MaybeFatal(err)
 }
 
 func newDefaultTestInterface() *mainTest {
