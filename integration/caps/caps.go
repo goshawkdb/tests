@@ -8,7 +8,7 @@ import (
 	"goshawkdb.io/tests/harness"
 )
 
-func createObjOffRoot(c *harness.Connection, cap *common.Capability, value []byte) {
+func createObjOffRoot(c *harness.Connection, cap common.Capability, value []byte) {
 	_, err := c.Transact(func(txn *client.Transaction) (interface{}, error) {
 		if rootPtr, found := txn.Root(c.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c.RootName)
@@ -25,7 +25,7 @@ func createObjOffRoot(c *harness.Connection, cap *common.Capability, value []byt
 	}
 }
 
-func attemptRead(c *harness.Connection, refsLen, refsIdx int, refCap, objCap *common.Capability, value []byte) {
+func attemptRead(c *harness.Connection, refsLen, refsIdx int, refCap, objCap common.Capability, value []byte) {
 	result, err := c.Transact(func(txn *client.Transaction) (interface{}, error) {
 		if rootPtr, found := txn.Root(c.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c.RootName)
@@ -71,7 +71,7 @@ func attemptRead(c *harness.Connection, refsLen, refsIdx int, refCap, objCap *co
 	}
 }
 
-func attemptWrite(c *harness.Connection, refsLen, refsIdx int, refCap, objCap *common.Capability, value []byte) {
+func attemptWrite(c *harness.Connection, refsLen, refsIdx int, refCap, objCap common.Capability, value []byte) {
 	_, err := c.Transact(func(txn *client.Transaction) (interface{}, error) {
 		if rootPtr, found := txn.Root(c.RootName); !found {
 			return nil, fmt.Errorf("No root object named '%s' found", c.RootName)
