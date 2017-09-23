@@ -244,9 +244,9 @@ func capabilitiesCanGrowSingleTxn(th *harness.TestHelper) {
 	//       \       v              /
 	//        \-n-> obj1 <--w------/
 	//
-	// However, because we're creating this whole structure in a single
-	// txn, c2 will get told about the whole txn in one go, and so
-	// should immediately learn that obj1 is read-write.
+	// Although we're creating this whole structure in a single txn, c2
+	// only gets told each object as it reads them, so as it reads obj3
+	// and obj2, it should learn more about obj1.
 
 	_, err := c1.Transact(func(txn *client.Transaction) (interface{}, error) {
 		if rootPtr, found := txn.Root(c1.RootName); !found {
@@ -270,7 +270,31 @@ func capabilitiesCanGrowSingleTxn(th *harness.TestHelper) {
 	if err != nil {
 		th.Fatal(err)
 	}
-	attemptRead(c2, 2, 1, common.NoneCapability, common.ReadWriteCapability, []byte("Hello World"))
+	// initially, c2 should not be able to read obj1
+	attemptRead(c2, 2, 1, common.NoneCapability, common.NoneCapability, nil)
+	// but, if c2 first reads obj3, it should find it can read obj1
+	attemptRead(c2, 2, 0, common.ReadWriteCapability, common.ReadWriteCapability, []byte{})
+	attemptRead(c2, 2, 1, common.NoneCapability, common.ReadOnlyCapability, []byte("Hello World"))
+	// finally, if c2 reads to obj2 then we should discover we can actually write obj1
+	_, err = c2.Transact(func(txn *client.Transaction) (interface{}, error) {
+		if rootPtr, found := txn.Root(c2.RootName); !found {
+			return nil, fmt.Errorf("No root object named '%s' found", c2.RootName)
+		} else if _, rootRefs, err := txn.Read(rootPtr); err != nil || txn.RestartNeeded() {
+			return nil, err
+		} else {
+			obj3Ptr := rootRefs[0]
+			if _, obj3Refs, err := txn.Read(obj3Ptr); err != nil || txn.RestartNeeded() {
+				return nil, err
+			} else {
+				obj2Ptr := obj3Refs[0]
+				_, _, err := txn.Read(obj2Ptr)
+				return nil, err
+			}
+		}
+	})
+	if err != nil {
+		th.Fatal(err)
+	}
 	attemptWrite(c2, 2, 1, common.NoneCapability, common.ReadWriteCapability, []byte("Goodbye World"))
 	attemptRead(c1, 2, 1, common.NoneCapability, common.ReadWriteCapability, []byte("Goodbye World"))
 }
